@@ -1,0 +1,40 @@
+# TaskManager Demo Script (20-25 saniye)
+
+## 1. TaskManager'ı Açma ve List Gösterme (0-5 sn)
+# Uygulamayı başlat
+cd TaskManager
+./taskmanager
+
+# Mevcut process listesini göster
+./taskmanager --list
+
+## 2. Schedule (Görev) Ayarlama (5-15 sn)
+# İlk görevi ayarla - Sistem kontrolü
+./taskmanager --schedule "system_check.sh" --time "09:00" --repeat daily --priority normal
+
+# İkinci görevi ayarla - Veri yedekleme
+./taskmanager --schedule "backup_data.sh" --time "22:00" --repeat weekly --priority high
+
+# Üçüncü görevi ayarla - Log temizleme
+./taskmanager --schedule "clean_logs.sh" --time "02:00" --repeat daily --priority low
+
+## 3. Görevleri Başlatma (15-20 sn)
+# Tüm görevleri başlat
+./taskmanager --start-all
+
+# Alternatif: Belirli görevleri başlat (task ID ile)
+./taskmanager --start 1 2 3
+
+## 4. Görevleri Listede Gösterme (20-22 sn)
+# Çalışan görevleri göster
+./taskmanager --list-tasks
+
+# Veya belirli bir görevi ara
+./taskmanager --find "backup"
+
+## 5. Öncelik Değiştirme (22-25 sn)
+# Görev önceliğini değiştir
+./taskmanager --set-priority 2 critical
+
+# Son durumu göster
+./taskmanager --list-tasks 
