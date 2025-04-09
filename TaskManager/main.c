@@ -34,8 +34,28 @@ void clear_screen(void) {
 
 void display_welcome_screen(void) {
     clear_screen();
-    printf("\033[1;34m"); //If you want to change greetings message color just change here.
-    //Normally we don't have gradinet color palette in terminal.But I figure out some way to do it. I guess...
+    
+    // ANSI renk kodları
+    printf("\033[1;38;5;208m"); // Turuncu
+    
+    printf("\n\n");
+    printf("                            .--.       .--.                                      \n");
+    printf("                           /    \\     /    \\                                     \n");
+    printf("                          |      \\-.-/      |                                    \n");
+    printf("                           \\                /                                     \n");
+    printf("                            `\\   \\___/    /'                                     \n");
+    printf("                              `--. .--'                                          \n");
+    printf("\033[1;31m");
+    printf("         _  __     _    ____  ____       _    ____  _   _ _____ ____      _     \n");
+    printf("        | |/ /    / \\  |  _ \\|  _ \\     / \\  / ___|| | | |_   _|  _ \\    / \\    \n");
+    printf("        | ' /    / _ \\ | |_) | |_) |   / _ \\ \\___ \\| | | | | | | |_) |  / _ \\   \n");
+    printf("\033[1;33m");
+    printf("        | . \\   / ___ \\|  __/|  __/   / ___ \\ ___) | |_| | | | |  _ <  / ___ \\  \n");
+    printf("        |_|\\_\\ /_/   \\_\\_|   |_|     /_/   \\_\\____/ \\___/  |_| |_| \\_\\/_/   \\_\\ \n");
+    printf("                                                                                \n");
+    printf("\033[0m");
+    
+    printf("\033[1;34m"); // Açık mavi
     printf("=============================================================================================\n");
     printf("|     _____                               __  __                                            |\n");
     printf("|    |  __ \\                             |  \\/  |                                           |\n");
@@ -46,8 +66,11 @@ void display_welcome_screen(void) {
     printf("|                                                                   __/ |                   |\n");
     printf("|                                                                  |___/                    |\n");
     printf("=============================================================================================\n");
-    printf("Developed by: \033[1;32mkappasutra\033[0m\n");
-    printf("\033[0m");
+    printf("\033[1;36m"); // Açık camgöbeği
+    printf("            Unix/Linux Process Manager & Task Scheduler - v1.0\n\n");
+    printf("\033[1;32m"); // Açık yeşil
+    printf("                   Developed by: \033[1;38;5;208mkappasutra\033[0m\n\n");
+    printf("\033[0m"); // Renkleri sıfırla
 }
 
 void display_menu(void) {
@@ -512,6 +535,9 @@ int main(void) {
     }
     
     display_welcome_screen();
+    printf("\nPress Enter to continue to main menu...");
+    getchar();
+    
     interactive_mode();
 
     return 0;
