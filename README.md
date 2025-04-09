@@ -2,7 +2,7 @@
 
 A comprehensive process management and task scheduling tool for Unix-like systems.
 
-![TaskManager Splash Screen](TaskManager/assets/splash.png)
+We have a simple example for "HOW TO USE" down below
 
 ![Task Manager Demo](TaskManager/assets/demo.gif)
 
@@ -56,9 +56,6 @@ For detailed usage instructions, please see the [User Manual](TaskManager/userma
   - `Makefile` - Build configuration
   - `usermanual.md` - Complete user documentation
 
-## Screenshots & Demos
-
-Splash screen and demo are displayed at the top of this README.
 
 ## License
 
