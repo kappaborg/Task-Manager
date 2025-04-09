@@ -58,7 +58,7 @@ For detailed usage instructions, please see the [User Manual](TaskManager/userma
 
 ## Screenshots & Demo
 
-Splash screen and demo are displayed at the top of this README.
+[TaskManager Video Demo](TaskManager/DEMO.mov)
 
 ## License
 
