@@ -98,23 +98,24 @@ void explain_process_state(char state);
  */
 void free_process_info(ProcessInfo *info);
 
-// Task Scheduler yapıları
+// Task Scheduler types
 typedef enum {
-    ONCE,           // Bir kere çalıştır
-    INTERVAL,       // Belirli aralıklarla çalıştır
-    DAILY          // Her gün belirli saatte çalıştır
+    ONCE,           // Run once
+    INTERVAL,       // Run at specific intervals
+    DAILY          // Run daily at specific time
 } schedule_type_t;
 
 typedef struct {
-    char command[256];           // Çalıştırılacak komut
-    schedule_type_t type;        // Zamanlama tipi
-    time_t execution_time;       // Çalıştırma zamanı
-    int interval_seconds;        // INTERVAL tipi için aralık
-    int is_active;              // Task aktif mi?
-    pid_t last_pid;             // Son çalıştırılan process'in PID'i
+    char command[256];           // Command to run
+    schedule_type_t type;        // Schedule type
+    time_t execution_time;       // Execution time
+    int interval_seconds;        // Interval for INTERVAL type
+    int is_active;              // Is task active?
+    pid_t last_pid;             // PID of the last executed process
+    int is_demo_task;           // Is this a demo task
 } scheduled_task_t;
 
-// Task Scheduler fonksiyonları
+// Task Scheduler functions
 void init_task_scheduler(void);
 void add_scheduled_task(const char* command, schedule_type_t type, time_t execution_time, int interval_seconds);
 void list_scheduled_tasks(void);
@@ -122,5 +123,6 @@ void remove_scheduled_task(int task_index);
 void run_task_scheduler(void);
 void stop_task_scheduler(void);
 void filter_tasks_by_name(const char* name);
+void add_demo_task(const char* name);
 
 #endif 

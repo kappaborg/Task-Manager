@@ -46,7 +46,7 @@ void* scheduler_thread_function(void* arg) {
                 case ONCE:
                     if (current_time >= tasks[i].execution_time) {
                         should_run = 1;
-                        tasks[i].is_active = 0;  // Bir kerelik görev tamamlandı
+                        tasks[i].is_active = 0;  // One-time task completed
                     }
                     break;
                     
@@ -179,7 +179,7 @@ void remove_scheduled_task(int task_index) {
         return;
     }
     
-    // Son task'ı silinen yere taşı
+    // Move the last task to the deleted position
     if (task_index < task_count - 1) {
         memcpy(&tasks[task_index], &tasks[task_count - 1], sizeof(scheduled_task_t));
     }
@@ -212,9 +212,6 @@ void list_all_processes(void) {
         return;
     } else if (pid == 0) {
         // Child process
-        // macOS için daha detaylı çıktı
-        execlp("ps", "ps", "aux", NULL);
-        perror("Failed to execute ps command");
         exit(EXIT_FAILURE);
     } else {
         // Parent process
@@ -924,4 +921,84 @@ void filter_tasks_by_name(const char *name) {
         printf("No tasks found matching '%s'\n", name);
     }
     pthread_mutex_unlock(&task_mutex);
-} 
+}
+
+void add_demo_task(const char* name) {
+    pthread_mutex_lock(&task_mutex);
+    
+    if (task_count >= MAX_SCHEDULED_TASKS) {
+        printf("Maximum task limit reached!\n");
+        pthread_mutex_unlock(&task_mutex);
+        return;
+    }
+    
+    // Check for existing demo tasks
+    for (int i = 0; i < task_count; i++) {
+        if (tasks[i].is_demo_task) {
+            printf("A demo task already exists (Task ID: %d, PID: %d)\n", i+1, tasks[i].last_pid);
+            pthread_mutex_unlock(&task_mutex);
+            return;
+        }
+    }
+    
+    scheduled_task_t* task = &tasks[task_count];
+    
+    // Demo task name
+    char task_name[256];
+    snprintf(task_name, sizeof(task_name), "Demo task: %s", name);
+    strncpy(task->command, task_name, sizeof(task->command) - 1);
+    
+    task->type = INTERVAL;
+    task->execution_time = time(NULL); // Start immediately
+    task->interval_seconds = 3600; // 1 hour (will run continuously)
+    task->is_active = 1;
+    task->last_pid = 0;
+    task->is_demo_task = 1; // This is a demo task
+    
+    int task_index = task_count; // Save task index for later
+    task_count++;
+    
+    printf("Demo task added. When you start the scheduler, it will run with a constant PID for a long time.\n");
+    
+    // If scheduler is already running, immediately assign a PID to this task
+    if (scheduler_running) {
+        // Create demo task controller
+        char task_id[64];
+        snprintf(task_id, sizeof(task_id), "Demo-%d-Task", task_index + 1);
+        
+        // Command for a long-running demo task
+        char command[512];
+        
+        // Command for demo task controller
+        snprintf(command, sizeof(command), 
+               "export PS1=\"Demo-%d> \"; echo \"[%s] DEMO TASK RUNNING ($(date))\" > /dev/stderr; "
+               "echo \"This is a demo task. PID:$$. Do not terminate with 'Ctrl+C'.\"; "
+               "echo \"This process is used for priority change demonstration.\"; "
+               "while true; do echo -n .; sleep 10; done", 
+               task_index + 1, task_id);
+        
+        // Fork process
+        pid_t pid = fork();
+        if (pid == 0) {
+            // Child process - demo process
+            setsid(); // Create own process group
+            
+            // Execute command
+            execl("/bin/sh", task_id, "-c", command, NULL);
+            exit(0);
+        } else if (pid > 0) {
+            // Parent process - save PID
+            task->last_pid = pid;
+            char timestamp[32];
+            time_t now = time(NULL);
+            strftime(timestamp, sizeof(timestamp), "%H:%M:%S", localtime(&now));
+            printf("Demo task started with PID: %d at %s\n", pid, timestamp);
+            printf("You can use this PID for priority change demonstrations.\n");
+        }
+    } else {
+        printf("This task is ideal for priority change operations.\n");
+    }
+    
+    pthread_mutex_unlock(&task_mutex);
+}
+
