@@ -14,11 +14,6 @@ Bu belgede, TaskManager uygulamasının etkileşimli arayüzünü kullanarak nas
    echo "" > browser_status.txt
    ```
 
-## Demo Kaydı Senaryosu
-
-### 1. TaskManager'ı Başlatma
-- Terminal ekranında şunu çalıştırın: `./process_manager`
-- Ana menü görüntülenecektir
 
 ### 2. Üç Adet Task Ekleme
 - **İlk Task**: 
