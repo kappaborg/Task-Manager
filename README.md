@@ -2,11 +2,11 @@
 
 A comprehensive process management and task scheduling tool for Unix-like systems.
 
-![TaskManager Splash Screen](TaskManager/assets/splash.png)
+Here is an example of "HOW TO USE"
 
 ![Task Manager Demo](TaskManager/assets/demo.gif)
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.3-blue)
 ![Platform](https://img.shields.io/badge/platform-Unix%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -56,7 +56,7 @@ For detailed usage instructions, please see the [User Manual](TaskManager/userma
   - `Makefile` - Build configuration
   - `usermanual.md` - Complete user documentation
 
-## Screenshots & Demos
+## Screenshots & Demo
 
 Splash screen and demo are displayed at the top of this README.
 
