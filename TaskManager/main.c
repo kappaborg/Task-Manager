@@ -242,6 +242,8 @@ void handle_task_scheduler(void) {
     printf("3. Remove task\n");
     printf("4. Start scheduler\n");
     printf("5. Stop scheduler\n");
+    printf("6. Filter tasks by name\n");
+    printf("7. Add demo task (öncelik değiştirme için)\n");
     printf("0. Back to main menu\n");
     printf("===================================\n");
     printf("Enter your choice: ");
@@ -310,10 +312,141 @@ void handle_task_scheduler(void) {
         case 5:
             stop_task_scheduler();
             break;
+        case 6: {
+            char name[256];
+            printf("Enter search term (example: 'echo' veya 'task'): ");
+            fgets(name, sizeof(name), stdin);
+            name[strcspn(name, "\n")] = 0;
+            
+            filter_tasks_by_name(name);
+            break;
+        }
+        case 7: {
+            char name[256];
+            printf("Demo görev için kısa bir ad girin: ");
+            fgets(name, sizeof(name), stdin);
+            name[strcspn(name, "\n")] = 0;
+            
+            if (strlen(name) == 0) {
+                strcpy(name, "PID Demo");  // Default ad
+            }
+            
+            add_demo_task(name);
+            printf("\nDemo görev eklendi. Görev listesini görüntülemek için '1' seçeneğini kullanın.\n");
+            printf("Sabit bir PID ile çalışan bir süreç görmek için scheduler'ı başlatın (4. seçenek).\n");
+            printf("Daha sonra ana menüye dönüp 'Change process priority' ile bu PID'nin önceliğini değiştirebilirsiniz.\n");
+            break;
+        }
         case 0:
             return;
         default:
-            printf("Invalid option!\n");
+            printf("Invalid option\n");
+            sleep(2);
+    }
+    
+    printf("\nPress any key to continue...");
+    getchar();
+}
+
+// Improve process filter to find scheduler tasks by enhancing the filter_processes_by_name function
+void filter_processes_by_name(const char *name) {
+    if (name == NULL || *name == '\0') {
+        printf("No filter pattern provided\n");
+        return;
+    }
+    
+    // Check if user is searching for tasks
+    if (strcasestr(name, "task") != NULL) {
+        printf("\nIpucu: Zamanlanmış görevleri görmek için:\n");
+        printf("1. Task Scheduler menüsüne gidin (seçenek 11)\n");
+        printf("2. 'List scheduled tasks' seçeneğini seçin (seçenek 1)\n\n");
+    }
+    
+    // Temporary file for storing ps output
+    char tmpfile[256];
+    snprintf(tmpfile, sizeof(tmpfile), "/tmp/proc_filter_%d", getpid());
+    
+    // Create a child process to run ps and filter by name
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("Fork failed");
+        return;
+    } else if (pid == 0) {
+        // Child process
+        freopen(tmpfile, "w", stdout);
+        
+        // Use ps with -e for all processes and more columns
+        char *args[] = {"ps", "-e", "-o", "pid,ppid,user,%cpu,%mem,stat,comm,args", NULL};
+        execvp("ps", args);
+        
+        perror("Failed to execute ps command");
+        exit(EXIT_FAILURE);
+    } else {
+        // Parent process waits for child
+        int status;
+        waitpid(pid, &status, 0);
+        
+        if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+            printf("Process filtering failed\n");
+            unlink(tmpfile);
+            return;
+        }
+        
+        // Read the output and filter by name
+        FILE *fp = fopen(tmpfile, "r");
+        if (fp == NULL) {
+            perror("Failed to open temp file");
+            unlink(tmpfile);
+            return;
+        }
+        
+        // Print header
+        printf("\n  PID  PPID USER     %%CPU %%MEM STAT COMMAND\n");
+        
+        char line[1024];
+        int count = 0;
+        int header_skipped = 0;
+        
+        while (fgets(line, sizeof(line), fp) != NULL) {
+            // Skip header line
+            if (!header_skipped) {
+                header_skipped = 1;
+                continue;
+            }
+            
+            // Convert to lowercase for case-insensitive search
+            char lower_line[1024];
+            strcpy(lower_line, line);
+            for (int i = 0; lower_line[i]; i++) {
+                lower_line[i] = tolower(lower_line[i]);
+            }
+            
+            char lower_name[256];
+            strcpy(lower_name, name);
+            for (int i = 0; lower_name[i]; i++) {
+                lower_name[i] = tolower(lower_name[i]);
+            }
+            
+            // If line contains the search term, print it
+            if (strstr(lower_line, lower_name) != NULL) {
+                printf("%s", line);
+                count++;
+            }
+        }
+        
+        fclose(fp);
+        unlink(tmpfile);
+        
+        if (count == 0) {
+            printf("No processes found matching '%s'\n", name);
+            
+            if (strcasestr(name, "task") != NULL) {
+                printf("\nNot: TaskManager henüz hiçbir görevi çalıştırmıyor olabilir.\n");
+                printf("Task Scheduler'dan (seçenek 11) bir görev ekleyin ve scheduler'ı başlatın.\n");
+            }
+        } else {
+            printf("\nFound %d processes matching '%s'\n", count, name);
+        }
     }
 }
 
@@ -469,103 +602,19 @@ int interactive_mode(void) {
 }
 
 int main(void) {
-    int choice;
-    pid_t pid;
-    char name[256];
-    int priority;
+    init_task_scheduler();
     
-    // Check if terminal supports ANSI escape sequences
-    char *term = getenv("TERM");
-    int interactive_supported = (term != NULL && strcmp(term, "dumb") != 0);
-    display_welcome_screen();
-    // If terminal supports it, ask if user wants interactive mode it's for makin UI more user-friendly
-    if (interactive_supported) {
-        printf("Do you want to use interactive mode? (y/n): ");
-        char response;
-        scanf("%c", &response);
-        getchar();   
-        
-        if (response == 'y' || response == 'Y') {
-            interactive_mode();
-            return 0;
-        }
-    }
-    
-    // Standard mode
-    while (1) {
-        display_menu();
-        scanf("%d", &choice);
-        getchar();   
-        
-        switch (choice) {
-            case 0:
-                printf("Exiting Process Manager. Goodbye!\n");
-                exit(0);
-            case 1:
-                list_all_processes();
-                break;
-            case 2:
-                printf("Enter process name to filter: ");
-                fgets(name, sizeof(name), stdin);
-                name[strcspn(name, "\n")] = 0; 
-                filter_processes_by_name(name);
-                break;
-            case 3:
-                printf("Enter PID to find: ");
-                scanf("%d", &pid);
-                getchar();   
-                find_process_by_pid(pid);
-                break;
-            case 4:
-                printf("Enter PID to terminate: ");
-                scanf("%d", &pid);
-                getchar();   
-                terminate_process(pid);
-                break;
-            case 5:
-                printf("Enter PID to change priority: ");
-                scanf("%d", &pid);
-                getchar();   
-                printf("Enter new priority (-20 to 19, lower is higher priority): ");
-                scanf("%d", &priority);
-                getchar();   
-                change_process_priority(pid, priority);
-                break;
-            case 6:
-                show_process_states_info();
-                break;
-            case 7:
-                handle_process_tree();
-                printf("\nPress any key to continue...");
-                getchar();
-                break;
-            case 8:
-                handle_resource_usage();
-                printf("\nPress any key to continue...");
-                getchar();
-                break;
-            case 9:
-                handle_group_operations();
-                printf("\nPress any key to continue...");
-                getchar();
-                break;
-            case 10:
-                start_chat_application();
-                printf("\nPress any key to continue...");
-                getchar();
-                break;
-            case 11:
-                handle_task_scheduler();
-                printf("\nPress any key to continue...");
-                getchar();
-                break;
-            default:
-                printf("Invalid choice. Please try again.\n");
-        }
-        
-        printf("\nPress Enter to continue...");
+    // Check if running with elevated privileges
+    uid_t euid = geteuid();
+    if (euid != 0) {
+        printf("Warning: Some operations (like changing priorities of system processes) \n");
+        printf("may require elevated privileges. Consider running with sudo if needed.\n\n");
+        printf("Press Enter to continue...");
         getchar();
     }
     
+    display_welcome_screen();
+    interactive_mode();
+
     return 0;
 } 

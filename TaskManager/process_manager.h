@@ -121,5 +121,6 @@ void list_scheduled_tasks(void);
 void remove_scheduled_task(int task_index);
 void run_task_scheduler(void);
 void stop_task_scheduler(void);
+void filter_tasks_by_name(const char* name);
 
 #endif 
