@@ -2,9 +2,9 @@
 
 A comprehensive process management and task scheduling tool for Unix-like systems.
 
-![TaskManager Splash Screen](https://github.com/kappaborg/Task-Manager/raw/main/TaskManager/assets/splash.png)
+![TaskManager Splash Screen](TaskManager/assets/splash.png)
 
-![Task Manager Demo](https://github.com/kappaborg/Task-Manager/raw/main/TaskManager/assets/demo.gif)
+![Task Manager Demo](TaskManager/assets/demo.gif)
 
 ![Version](https://img.shields.io/badge/version-1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Unix%20%7C%20macOS-lightgrey)
