@@ -55,25 +55,10 @@ For detailed usage instructions, please see the [User Manual](TaskManager/userma
 ## Screenshots & Demos
 
 ### Screenshots
-*Coming soon*
+![TaskManager Splash Screen](https://github.com/kappaborg/Task-Manager/raw/main/splash.png)
 
 ### Demo Recordings
-To add a demo recording:
-
-- For GIF demos (recommended for README visibility):
-  ```
-  ![Demo Description](assets/demo-recording.gif)
-  ```
-
-- For video demos:
-  ```
-  <video width="640" height="360" controls>
-    <source src="assets/demo-recording.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-  ```
-
-*Note: For optimal GitHub viewing, 20-25 second GIF recordings work best. Store your media files in an `assets` or `docs/media` folder.*
+![Task Manager Demo](https://github.com/kappaborg/Task-Manager/raw/main/demo.gif)
 
 ## License
 
