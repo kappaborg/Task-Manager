@@ -1,2 +1,0 @@
-kappasutra       68948   0.0  0.0 410199792   1248 s019  S+    1:58PM   0:00.01 grep firefox
-kappasutra       68945   0.0  0.0 410200320   1648 s019  S+    1:58PM   0:00.01 sh -c ps aux | grep firefox > browser_status.txt
