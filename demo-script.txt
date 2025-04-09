@@ -1,40 +1,99 @@
-# TaskManager Demo Script (20-25 saniye)
+# TaskManager Demo Script (Kullanıcı Kılavuzuna Göre)
 
-## 1. TaskManager'ı Açma ve List Gösterme (0-5 sn)
-# Uygulamayı başlat
+## 1. TaskManager'ı Başlatma (0-3 sn)
 cd TaskManager
-./taskmanager
+./process_manager
+# Ana menü görünecek
 
-# Mevcut process listesini göster
-./taskmanager --list
+## 2. İlk Task'ı Ekleme (3-8 sn)
+# Ana menüden "11. Task Scheduler" seçin
+11
+# Task Scheduler menüsünde "2. Add new task" seçin
+2
+# Komut olarak: 
+echo "Bu ilk görevimiz" >> task_log.txt
+# Zamanlama tipi: "2. Run at intervals" (aralıklarla çalışsın)
+2
+# Zaman aralığı: 60 (her dakika çalışacak)
+60
+# Task başarıyla eklendiğinde, Task ID 1 olarak atanacaktır
 
-## 2. Schedule (Görev) Ayarlama (5-15 sn)
-# İlk görevi ayarla - Sistem kontrolü
-./taskmanager --schedule "system_check.sh" --time "09:00" --repeat daily --priority normal
+## 3. İkinci Task'ı Ekleme (8-13 sn)
+# Tekrar "2. Add new task" seçin
+2
+# Komut olarak:
+ls -la >> system_files.txt
+# Zamanlama tipi: "3. Run daily at specific time" (günlük belirli saatte)
+3
+# Çalışma zamanı formatı: "YYYY MM DD HH MM" girin
+2023 05 20 14 30
+# Task başarıyla eklendiğinde, Task ID 2 olarak atanacaktır
 
-# İkinci görevi ayarla - Veri yedekleme
-./taskmanager --schedule "backup_data.sh" --time "22:00" --repeat weekly --priority high
+## 4. Üçüncü Task'ı Ekleme (13-18 sn)
+# Tekrar "2. Add new task" seçin
+2
+# Komut olarak:
+ps aux | grep firefox > browser_status.txt
+# Zamanlama tipi: "1. Run once at specific time" (tek seferlik)
+1
+# Çalışma zamanı formatı: "YYYY MM DD HH MM" girin
+2023 05 20 15 00
+# Task başarıyla eklendiğinde, Task ID 3 olarak atanacaktır
 
-# Üçüncü görevi ayarla - Log temizleme
-./taskmanager --schedule "clean_logs.sh" --time "02:00" --repeat daily --priority low
+## 5. Task'ların Listesini Görüntüleme (18-20 sn)
+# "1. List scheduled tasks" seçin
+1
+# Planlanan görevlerin listesi Task ID'leri (1, 2, 3) ile birlikte görüntülenecektir
 
-## 3. Görevleri Başlatma (15-20 sn)
-# Tüm görevleri başlat
-./taskmanager --start-all
+## 6. Görev Zamanlayıcıyı Başlatma (20-22 sn)
+# "4. Start scheduler" seçin
+4
+# Görevler belirtilen zamanlarda çalışmaya başlayacaktır
 
-# Alternatif: Belirli görevleri başlat (task ID ile)
-./taskmanager --start 1 2 3
+## 7. Ana Menüye Dönmek (22-23 sn)
+# Ana menüye dönmek için "0. Back to main menu" seçin
+0
 
-## 4. Görevleri Listede Gösterme (20-22 sn)
-# Çalışan görevleri göster
-./taskmanager --list-tasks
+## 8. Çalışan Task'ların PID'lerini Bulma (23-25 sn)
+# Ana menüden "1. List all processes" seçin
+1
+# Task ile ilgili process'leri görmek için filtreleme yapabilirsiniz
+# "2. Filter processes by name" seçip filtreleme yapabilirsiniz
+2
+# Filtre olarak "task" kullanabilirsiniz
+task
+# PID'leri not alın (örnek olarak PID 5432, 5433, 5434 olduğunu varsayalım)
 
-# Veya belirli bir görevi ara
-./taskmanager --find "backup"
+## 9. Task Önceliklerini Değiştirme (25-30 sn)
+# Ana menüye dönmek için "0. Back to main menu" seçin
+0
+# Ana menüden "5. Change process priority" seçin
+5
+# Önceliğini değiştirmek istediğiniz task'ın PID'sini girin (Task ID değil, gerçek PID)
+5432
+# Yüksek öncelik için: -10 (CPU'ya daha fazla erişim sağlar)
+-10
 
-## 5. Öncelik Değiştirme (22-25 sn)
-# Görev önceliğini değiştir
-./taskmanager --set-priority 2 critical
+# İkinci task için tekrar "5. Change process priority" seçin
+5
+# İkinci task'ın PID'sini girin
+5433
+# Normal öncelik için: 0
+0
 
-# Son durumu göster
-./taskmanager --list-tasks 
+# Üçüncü task için tekrar "5. Change process priority" seçin
+5
+# Üçüncü task'ın PID'sini girin
+5434
+# Düşük öncelik için: 10 (CPU'yu diğer işlemlere bırakır)
+10
+
+## 10. Task'ların Yeni Önceliklerini Görüntüleme (30-35 sn)
+# Ana menüden "1. List all processes" seçin
+1
+# Görevlerin yeni öncelik değerlerini görüntüleyin
+# Filtre olarak "task" kullanabilirsiniz
+2
+task
+
+# Demo Tamamlandı! 
