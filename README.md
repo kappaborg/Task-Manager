@@ -56,10 +56,11 @@ For detailed usage instructions, please see the [User Manual](TaskManager/userma
   - `Makefile` - Build configuration
   - `usermanual.md` - Complete user documentation
 
-## Screenshot
+## Screenshot & Demo Video
 
 ![image](https://github.com/user-attachments/assets/949e971a-7904-4bf2-8a2c-752a7657a225)
 
+https://youtu.be/PAQoFga1n9w
 
 ## License
 
