@@ -97,7 +97,7 @@ When tasks run, they get system-assigned PIDs which can be used to adjust priori
 
 Watch TaskManager in action:
 
-[View Demo Video](./demo.mp4)
+[View Demo Video](https://youtu.be/PAQoFga1n9w)
 
 ## Documentation
 
