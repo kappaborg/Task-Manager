@@ -1,3 +1,0 @@
-Task 1 (PID: 36859) started at 22:41:51: echo "FT" >> task1.txt
-Task 1 (PID: 37270) started at 22:42:51: echo "FT" >> task1.txt
-Task 1 (PID: 37737) started at 22:43:51: echo "FT" >> task1.txt

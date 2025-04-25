@@ -63,7 +63,7 @@ static int message_scroll = 0;
 static int current_mode = 0; // 0: normal, 1: command, 2: user selection
 static int selected_user = -1;
 static char input_buffer[MAX_BUF] = "";
-static int input_pos = 0;
+static size_t input_pos = 0;
 static int command_mode = 0;
 
 pthread_mutex_t resize_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -99,7 +99,11 @@ void resize_windows();
 
 // Initialize ncurses UI
 void init_ui() {
+    fprintf(stderr, "Initializing UI...\n");
+
     setlocale(LC_ALL, "");  // Add locale support for proper UTF-8 handling
+    
+    // Initialize ncurses
     initscr();
     start_color();
     cbreak();
@@ -107,6 +111,8 @@ void init_ui() {
     keypad(stdscr, TRUE);
     timeout(100); // Non-blocking input
     curs_set(1);  // Show cursor
+    
+    fprintf(stderr, "Ncurses initialized successfully\n");
     
     // Initialize color pairs
     init_pair(COLOR_NORMAL, COLOR_WHITE, COLOR_BLACK);
@@ -116,15 +122,48 @@ void init_ui() {
     init_pair(COLOR_HIGHLIGHT, COLOR_BLACK, COLOR_WHITE);
     init_pair(COLOR_USER_LIST, COLOR_CYAN, COLOR_BLACK);
     
-    // Create windows
+    // Get terminal dimensions
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
     
-    user_list_win = newwin(max_y - 1, USER_LIST_WIDTH, 0, 0);
-    message_win = newwin(max_y - INPUT_HEIGHT - 1, max_x - USER_LIST_WIDTH, 0, USER_LIST_WIDTH);
-    input_win = newwin(INPUT_HEIGHT, max_x, max_y - INPUT_HEIGHT, 0);
+    fprintf(stderr, "Terminal size: %dx%d\n", max_x, max_y);
     
+    // Ensure minimum terminal size
+    if (max_y < 10 || max_x < 40) {
+        endwin();
+        fprintf(stderr, "Terminal size too small. Minimum 40x10 required.\n");
+        exit(1);
+    }
+    
+    // Create windows with error checking
+    user_list_win = newwin(max_y - 1, USER_LIST_WIDTH, 0, 0);
+    if (user_list_win == NULL) {
+        endwin();
+        fprintf(stderr, "Failed to create user list window\n");
+        exit(1);
+    }
+    
+    message_win = newwin(max_y - INPUT_HEIGHT - 1, max_x - USER_LIST_WIDTH, 0, USER_LIST_WIDTH);
+    if (message_win == NULL) {
+        delwin(user_list_win);
+        endwin();
+        fprintf(stderr, "Failed to create message window\n");
+        exit(1);
+    }
+    
+    input_win = newwin(INPUT_HEIGHT, max_x, max_y - INPUT_HEIGHT, 0);
+    if (input_win == NULL) {
+        delwin(message_win);
+        delwin(user_list_win);
+        endwin();
+        fprintf(stderr, "Failed to create input window\n");
+        exit(1);
+    }
+    
+    // Enable scrolling for message window
     scrollok(message_win, TRUE);
+    
+    fprintf(stderr, "Windows created successfully\n");
     
     // Draw initial UI
     draw_user_list();
@@ -135,6 +174,14 @@ void init_ui() {
     // Add welcome message
     add_message("Welcome to Chat TUI Client", MSG_SYSTEM);
     add_message("Press F1 for help", MSG_SYSTEM);
+    
+    // Make sure everything is refreshed
+    refresh();
+    wrefresh(user_list_win);
+    wrefresh(message_win);
+    wrefresh(input_win);
+    
+    fprintf(stderr, "UI initialization complete\n");
 }
 
 // Clean up ncurses UI
@@ -245,10 +292,12 @@ void draw_input() {
     mvwprintw(input_win, 0, (win_width - 8) / 2, " Input ");
     mvwprintw(input_win, 1, 1, "%s%s", prompt, input_buffer);
     
-    // Position cursor
-    wmove(input_win, 1, strlen(prompt) + input_pos);
+    // Position cursor - convert prompt length to size_t for type consistency
+    wmove(input_win, 1, (int)(strlen(prompt) + input_pos));
     
     wrefresh(input_win);
+    // Force cursor to remain visible
+    curs_set(1);
 }
 
 // Draw status bar
@@ -300,6 +349,13 @@ void add_message(const char *text, enum MessageType type) {
 
 // Process a key press
 void process_input(int ch) {
+    // Debug input for key codes
+    if (ch != ERR) {
+        char debug_buf[100];
+        snprintf(debug_buf, sizeof(debug_buf), "Received key: %d (0x%x)", ch, ch);
+        fprintf(stderr, "%s\n", debug_buf);
+    }
+
     if (current_mode == 2) {
         // User selection mode
         switch (ch) {
@@ -361,7 +417,8 @@ void process_input(int ch) {
             break;
         
         case KEY_BACKSPACE:
-        case 127:
+        case 127: // ASCII DEL
+        case 8:   // ASCII BS
             if (input_pos > 0) {
                 memmove(&input_buffer[input_pos - 1], &input_buffer[input_pos], 
                         strlen(input_buffer) - input_pos + 1);
@@ -371,7 +428,7 @@ void process_input(int ch) {
             break;
         
         case KEY_DC:
-            if (input_pos < (int)strlen(input_buffer)) {
+            if (input_pos < strlen(input_buffer)) {
                 memmove(&input_buffer[input_pos], &input_buffer[input_pos + 1], 
                         strlen(input_buffer) - input_pos);
                 draw_input();
@@ -398,7 +455,7 @@ void process_input(int ch) {
                 selected_user = 0;
                 draw_status_bar();
                 draw_user_list();
-            } else if (input_pos < (int)strlen(input_buffer)) {
+            } else if (input_pos < strlen(input_buffer)) {
                 input_pos++;
                 draw_input();
             }
@@ -441,7 +498,9 @@ void process_input(int ch) {
                 } else {
                     // Regular message
                     send_message("MSG", "", input_buffer);
-                    add_message(input_buffer, MSG_NORMAL);
+                    char display[MAX_BUF];
+                    snprintf(display, MAX_BUF, "[%s]: %s", username, input_buffer);
+                    add_message(display, MSG_NORMAL);
                 }
                 
                 input_buffer[0] = '\0';
@@ -455,9 +514,18 @@ void process_input(int ch) {
         
         default:
             if (ch >= 32 && ch <= 126 && strlen(input_buffer) < MAX_BUF - 1) {
-                memmove(&input_buffer[input_pos + 1], &input_buffer[input_pos], 
+                // Add new character to buffer
+                size_t len = strlen(input_buffer);
+                if (input_pos == len) {
+                    // Append at end
+                    input_buffer[input_pos] = ch;
+                    input_buffer[input_pos + 1] = '\0';
+                } else {
+                    // Insert in middle
+                    memmove(&input_buffer[input_pos + 1], &input_buffer[input_pos], 
                         strlen(input_buffer) - input_pos + 1);
-                input_buffer[input_pos] = ch;
+                    input_buffer[input_pos] = ch;
+                }
                 input_pos++;
                 draw_input();
             }
@@ -567,76 +635,60 @@ void handle_server_message(const char *type, const char *source, const char *des
     }
 }
 
+// Process a received message from server
 void process_received_message(const char *message) {
     if (message == NULL || strlen(message) == 0) {
         add_message("Received empty message from server", MSG_ERROR);
         return;
     }
-    
+
+    fprintf(stderr, "Received message from server: %s\n", message);
+
     char *msg_copy = strdup(message);
     if (msg_copy == NULL) {
         add_message("Memory allocation error processing message", MSG_ERROR);
         return;
     }
     
-    // Parse message format: SOURCE\nTYPE\nDEST\nCONTENT
+    // Parse message format: SOURCE|TYPE|DEST|CONTENT using pipe separators
     char *source = msg_copy;
     char *type = NULL;
     char *dest = NULL;
     char *content = NULL;
     
-    // Find first newline
-    char *newline = strchr(source, '\n');
-    if (newline != NULL) {
-        *newline = '\0';
-        type = newline + 1;
+    char *pipe = strchr(source, '|');
+    if (pipe != NULL) {
+        *pipe = '\0';
+        type = pipe + 1;
         
-        // Find second newline
-        newline = strchr(type, '\n');
-        if (newline != NULL) {
-            *newline = '\0';
-            dest = newline + 1;
+        pipe = strchr(type, '|');
+        if (pipe != NULL) {
+            *pipe = '\0';
+            dest = pipe + 1;
             
-            // Find third newline
-            newline = strchr(dest, '\n');
-            if (newline != NULL) {
-                *newline = '\0';
-                content = newline + 1;
+            pipe = strchr(dest, '|');
+            if (pipe != NULL) {
+                *pipe = '\0';
+                content = pipe + 1;
             }
         }
     }
 
-    if (source && type) {
-        if (strcmp(source, "SYSTEM") == 0) {
-            handle_server_message(type, source, dest, content);
-        } else if (strcmp(type, "MSG") == 0) {
-            // Regular broadcast message
-            char display_msg[MAX_BUF];
-            snprintf(display_msg, sizeof(display_msg), "<%s> %s", source, content ? content : "");
-            add_message(display_msg, MSG_NORMAL);
-        } else if (strcmp(type, "PRIV") == 0) {
-            // Private message
-            char display_msg[MAX_BUF];
-            if (strcmp(source, username) == 0) {
-                snprintf(display_msg, sizeof(display_msg), "To <%s>: %s", dest, content ? content : "");
-            } else {
-                snprintf(display_msg, sizeof(display_msg), "From <%s>: %s", source, content ? content : "");
-            }
-            add_message(display_msg, MSG_PRIVATE);
-        } else {
-            // Unknown message type
-            char display_msg[MAX_BUF];
-            snprintf(display_msg, sizeof(display_msg), "Unknown message type from %s: %s", source, type);
-            add_message(display_msg, MSG_ERROR);
-        }
+    fprintf(stderr, "Parsed message - Source: %s, Type: %s, Dest: %s, Content: %s\n", 
+            source ? source : "NULL", 
+            type ? type : "NULL", 
+            dest ? dest : "NULL", 
+            content ? content : "NULL");
+
+    if (source != NULL && type != NULL) {
+        handle_server_message(type, source, dest, content);
     } else {
-        // Invalid message format
-        add_message("Invalid message format from server", MSG_ERROR);
+        char err_buf[MAX_BUF];
+        snprintf(err_buf, sizeof(err_buf), "Invalid message format from server: %s", message);
+        add_message(err_buf, MSG_ERROR);
     }
     
     free(msg_copy);
-    
-    // Update UI
     update_ui();
 }
 
@@ -783,6 +835,11 @@ void *receive_messages(void *arg) {
     (void)arg;  // Mark parameter as intentionally unused
     
     char buf[MAX_BUF];
+    fprintf(stderr, "Receiver thread started\n");
+    
+    // Flag to track reconnection attempts
+    int reconnect_attempts = 0;
+    const int max_reconnect_attempts = 3;
     
     while (running) {
         // Check for resize events
@@ -794,28 +851,81 @@ void *receive_messages(void *arg) {
             resize_windows();
         }
         
+        // If FIFO is invalid, try to reopen
+        if (client_fifo == -1) {
+            fprintf(stderr, "Client FIFO is invalid, trying to reopen\n");
+            
+            if (reconnect_attempts < max_reconnect_attempts) {
+                reconnect_attempts++;
+                
+                // Reopen client FIFO for reading
+                client_fifo = open(client_fifo_name, O_RDONLY | O_NONBLOCK);
+                if (client_fifo == -1) {
+                    fprintf(stderr, "Failed to reopen client FIFO: %s\n", strerror(errno));
+                    add_message("Lost connection to server", MSG_ERROR);
+                    sleep(1); // Wait before trying again
+                    continue;
+                } else {
+                    fprintf(stderr, "Successfully reopened client FIFO\n");
+                    add_message("Reconnected to server", MSG_SYSTEM);
+                    reconnect_attempts = 0; // Reset counter on success
+                }
+            } else {
+                // Too many failed attempts
+                add_message("Failed to reconnect to server after multiple attempts", MSG_ERROR);
+                running = 0; // Exit the loop
+                break;
+            }
+        }
+        
         // Read from client FIFO
         int bytes_read = read(client_fifo, buf, sizeof(buf) - 1);
+        
         if (bytes_read > 0) {
             buf[bytes_read] = '\0';
+            fprintf(stderr, "Read %d bytes from FIFO\n", bytes_read);
             process_received_message(buf);
+            reconnect_attempts = 0; // Reset counter on successful read
         } else if (bytes_read == 0) {
-            // FIFO closed, try to reopen
+            // FIFO closed (EOF), try to reopen
+            fprintf(stderr, "FIFO closed (EOF), trying to reopen\n");
             close(client_fifo);
             client_fifo = open(client_fifo_name, O_RDONLY | O_NONBLOCK);
             if (client_fifo == -1) {
-                add_message("Lost connection to server", MSG_ERROR);
-                if (!running) break;
+                fprintf(stderr, "Failed to reopen client FIFO: %s\n", strerror(errno));
+                
+                if (reconnect_attempts < max_reconnect_attempts) {
+                    add_message("Connection issue, trying to reconnect...", MSG_ERROR);
+                    reconnect_attempts++;
+                } else {
+                    add_message("Failed to reconnect to server after multiple attempts", MSG_ERROR);
+                    if (!running) break;
+                }
+                
                 sleep(1); // Don't try to reconnect too aggressively
+            } else {
+                fprintf(stderr, "Successfully reopened client FIFO\n");
+                reconnect_attempts = 0; // Reset counter on success
             }
         } else if (errno != EAGAIN) {
             // Error reading from FIFO
-            add_message("Error reading from server", MSG_ERROR);
+            fprintf(stderr, "Error reading from FIFO: %s\n", strerror(errno));
+            
+            if (errno == EBADF || errno == EINVAL) {
+                // Bad file descriptor, need to reopen
+                add_message("Connection lost, trying to reconnect...", MSG_ERROR);
+                close(client_fifo);
+                client_fifo = -1; // Mark as invalid
+                continue; // Try again in the next iteration
+            } else {
+                add_message("Error reading from server", MSG_ERROR);
+            }
         }
         
         usleep(100000); // Sleep for 100ms to avoid high CPU usage
     }
     
+    fprintf(stderr, "Receiver thread ending\n");
     return NULL;
 }
 
@@ -899,69 +1009,123 @@ void get_username(void) {
             getch();
         }
     }
+    
+    clear();
+    printw("Username '%s' accepted. Connecting to server...\n", username);
+    refresh();
+    sleep(1); // Show message briefly
 }
 
 int connect_to_server(void) {
+    fprintf(stderr, "Connecting to server FIFO...\n");
+    
     // Open server FIFO for writing
     server_fifo = open(SERVER_FIFO, O_WRONLY);
     if (server_fifo == -1) {
+        fprintf(stderr, "Error: Cannot connect to server: %s\n", strerror(errno));
         add_message("Cannot connect to server", MSG_ERROR);
         return 0;
     }
+    
+    fprintf(stderr, "Creating client FIFO...\n");
     
     // Create client FIFO
     snprintf(client_fifo_name, sizeof(client_fifo_name), CLIENT_FIFO_TEMPLATE, username);
     unlink(client_fifo_name); // Remove if it already exists
     
     if (mkfifo(client_fifo_name, 0666) == -1) {
+        fprintf(stderr, "Error: Cannot create client FIFO: %s\n", strerror(errno));
         add_message("Cannot create client FIFO", MSG_ERROR);
         close(server_fifo);
         server_fifo = -1;
         return 0;
     }
     
-    // Open client FIFO for reading
+    fprintf(stderr, "Opening client FIFO for reading...\n");
+    
+    // Actually need to open the write end first to prevent blocking
+    int dummy_fifo = open(client_fifo_name, O_WRONLY | O_NONBLOCK);
+    if (dummy_fifo == -1) {
+        fprintf(stderr, "Warning: Cannot open write end of client FIFO: %s\n", strerror(errno));
+        // Non-fatal, continue
+    } else {
+        // Keep this open in background to prevent FIFO from closing
+        fprintf(stderr, "Successfully opened write end of client FIFO\n");
+    }
+    
+    // Now open client FIFO for reading
     client_fifo = open(client_fifo_name, O_RDONLY | O_NONBLOCK);
     if (client_fifo == -1) {
+        fprintf(stderr, "Error: Cannot open client FIFO for reading: %s\n", strerror(errno));
         add_message("Cannot open client FIFO for reading", MSG_ERROR);
         close(server_fifo);
+        if (dummy_fifo != -1) close(dummy_fifo);
         server_fifo = -1;
         unlink(client_fifo_name);
         return 0;
     }
     
+    fprintf(stderr, "Sending JOIN message to server...\n");
+    
     // Send join message to server
     send_join_message();
+    add_message("Connected to server successfully", MSG_SYSTEM);
     
     return 1;
 }
 
 int main(void) {
+    // Before ncurses initialization, print some debug information to stderr
+    fprintf(stderr, "Starting Chat TUI Client...\n");
+    
     // Kullanıcı adını al
+    // Initialize ncurses for username input
+    initscr();
+    cbreak();
+    echo();
+    
     get_username();
+    
+    // Clean up initial ncurses for UI initialization
+    endwin();
+    
+    fprintf(stderr, "Username obtained: %s\n", username);
     
     // Sinyalleri ayarla
     signal(SIGWINCH, handle_resize);
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
+    fprintf(stderr, "Initializing UI...\n");
+    
     // UI'ı başlat
     init_ui();
     update_ui();
     
+    fprintf(stderr, "Connecting to server...\n");
+    
     // Server'a bağlan
     if (!connect_to_server()) {
+        fprintf(stderr, "Failed to connect to server!\n");
         cleanup_ui();
         exit(1);
     }
     
+    fprintf(stderr, "Connected to server successfully\n");
+    
     // Mesaj alma thread'ini başlat
     pthread_t recv_thread;
     if (pthread_create(&recv_thread, NULL, receive_messages, NULL) != 0) {
+        fprintf(stderr, "Failed to create receiver thread!\n");
         add_message("Failed to create receiver thread", MSG_ERROR);
         cleanup();
         exit(1);
     }
+    
+    fprintf(stderr, "Receiver thread created successfully\n");
+    
+    // Request user list after connection
+    request_user_list();
     
     // Ana döngü
     while (running) {

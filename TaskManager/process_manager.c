@@ -617,6 +617,8 @@ void display_process_tree(pid_t root_pid) {
 }
 
 void show_top_resource_usage(int sort_by, int count) {
+    count = count + 1;
+    sort_by = sort_by;
     if (count <= 0) {
         count = 10; // Default to top 10 if you want you can change it but believe me after 10 in terminal you will see a lot of processes. So hard to see.
     }

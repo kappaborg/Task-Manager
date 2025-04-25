@@ -121,29 +121,29 @@ void process_received_message(const char *message) {
         return;
     }
     
-    // Parse message format: SOURCE\nTYPE\nDEST\nCONTENT
+    // Parse message format: SOURCE|TYPE|DEST|CONTENT
     char *source = msg_copy;
     char *type = NULL;
     char *dest = NULL;
     char *content = NULL;
     
-    // Find first newline
-    char *newline = strchr(source, '\n');
-    if (newline != NULL) {
-        *newline = '\0';
-        type = newline + 1;
+    // Find first pipe
+    char *pipe = strchr(source, '|');
+    if (pipe != NULL) {
+        *pipe = '\0';
+        type = pipe + 1;
         
-        // Find second newline
-        newline = strchr(type, '\n');
-        if (newline != NULL) {
-            *newline = '\0';
-            dest = newline + 1;
+        // Find second pipe
+        pipe = strchr(type, '|');
+        if (pipe != NULL) {
+            *pipe = '\0';
+            dest = pipe + 1;
             
-            // Find third newline
-            newline = strchr(dest, '\n');
-            if (newline != NULL) {
-                *newline = '\0';
-                content = newline + 1;
+            // Find third pipe
+            pipe = strchr(dest, '|');
+            if (pipe != NULL) {
+                *pipe = '\0';
+                content = pipe + 1;
             }
         }
     }
@@ -175,7 +175,7 @@ void process_received_message(const char *message) {
         }
     } else {
         // Invalid message format
-        printf("Invalid message format from server\n");
+        printf("Invalid message format from server: %s\n", message);
     }
     
     free(msg_copy);
