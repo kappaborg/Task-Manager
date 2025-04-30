@@ -94,11 +94,8 @@ void add_log_entry(const char *message, LogType type) {
     log_entries[log_count].timestamp = time(NULL);
     log_count++;
     
-    // Only update display for critical logs or when specifically requested
-    // This prevents constant screen refreshing
-    if (type == LOG_ERROR || type == LOG_WARNING) {
-        display_dashboard();
-    }
+    // Update display
+    display_dashboard();
 }
 
 // Get formatted time string
@@ -235,344 +232,271 @@ void send_to_client(const char *username, const char *message) {
     char client_fifo[100];
     snprintf(client_fifo, sizeof(client_fifo), CLIENT_FIFO_TEMPLATE, username);
     
-    fprintf(stderr, "Sending message to client %s: %s\n", username, message);
-    
     int fd = open(client_fifo, O_WRONLY | O_NONBLOCK);
-    if (fd == -1) {
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), 
-                "Failed to open client FIFO for %s: %s", username, strerror(errno));
-        add_log_entry(error_msg, LOG_ERROR);
-        return;
-    }
-    
-    // Add a null terminator to ensure proper message boundary
-    char *msg_with_null = malloc(strlen(message) + 1);
-    if (msg_with_null == NULL) {
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), 
-                "Memory allocation failure when sending to %s", username);
-        add_log_entry(error_msg, LOG_ERROR);
+    if (fd != -1) {
+        ssize_t bytes_written = write(fd, message, strlen(message));
         close(fd);
-        return;
-    }
-    
-    strcpy(msg_with_null, message);
-    
-    ssize_t bytes_written = write(fd, msg_with_null, strlen(msg_with_null));
-    if (bytes_written == -1) {
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), 
-                "Failed to write to client FIFO for %s: %s", username, strerror(errno));
-        add_log_entry(error_msg, LOG_ERROR);
-    } else {
-        // Update user's last active time
-        int idx = find_user(username);
-        if (idx != -1) {
-            users[idx].last_active = time(NULL);
+        
+        if (bytes_written == -1) {
+            char log_msg[MAX_BUF];
+            snprintf(log_msg, MAX_BUF, "Failed to write to client FIFO for %s: %s", 
+                     username, strerror(errno));
+            add_log_entry(log_msg, LOG_ERROR);
+            return;
         }
         
-        // Log successful delivery
         char log_msg[MAX_BUF];
-        snprintf(log_msg, sizeof(log_msg), "Sent message to %s (%ld bytes)", 
-                username, (long)bytes_written);
+        snprintf(log_msg, MAX_BUF, "Sent to %s: %s", username, message);
         add_log_entry(log_msg, LOG_INFO);
+    } else {
+        char log_msg[MAX_BUF];
+        snprintf(log_msg, MAX_BUF, "Failed to open client FIFO for %s: %s", 
+                 username, strerror(errno));
+        add_log_entry(log_msg, LOG_ERROR);
     }
-    
-    free(msg_with_null);
-    close(fd);
 }
 
-// Handle user joining
 void handle_join(char *username) {
+    int idx = find_user(username);
     char log_msg[MAX_BUF];
+    char client_fifo[100];
     
-    fprintf(stderr, "User '%s' trying to join\n", username);
-    
-    // Check if username is already taken
-    int existing_idx = find_user(username);
-    if (existing_idx != -1) {
-        if (users[existing_idx].active) {
-            // Username already active
-            snprintf(log_msg, sizeof(log_msg), 
-                    "User %s tried to join but username is already active", username);
+    // Check if username is valid
+    if (strlen(username) < 3 || strlen(username) > 31) {
+        snprintf(log_msg, MAX_BUF, "Rejected join request from %s: Invalid username length", username);
+        add_log_entry(log_msg, LOG_WARNING);
+        return;
+    }
+
+    // Check if username contains only valid characters
+    for (size_t i = 0; i < strlen(username); i++) {
+        if (!isalnum(username[i]) && username[i] != '_') {
+            snprintf(log_msg, MAX_BUF, "Rejected join request from %s: Invalid characters in username", username);
             add_log_entry(log_msg, LOG_WARNING);
-            
-            char error_msg[MAX_BUF];
-            snprintf(error_msg, sizeof(error_msg), 
-                    "SYSTEM|ERROR|%s|Username is already in use", username);
-            send_to_client(username, error_msg);
             return;
-        } else {
-            // Reactivate existing user
-            users[existing_idx].active = 1;
-            users[existing_idx].last_active = time(NULL);
-            
-            snprintf(log_msg, sizeof(log_msg), "User %s rejoined", username);
-            add_log_entry(log_msg, LOG_INFO);
         }
-    } else {
+    }
+    
+    if (idx != -1) {
+        // User already exists, update their status
+        users[idx].active = 1;
+        users[idx].last_active = time(NULL);
+        snprintf(log_msg, MAX_BUF, "User %s reconnected", username);
+        add_log_entry(log_msg, LOG_INFO);
+    } else if (user_count < MAX_USERS) {
         // Add new user
-        if (user_count >= MAX_USERS) {
-            // Server is full
-            snprintf(log_msg, sizeof(log_msg), 
-                    "User %s tried to join but server is full", username);
-            add_log_entry(log_msg, LOG_WARNING);
-            
-            char error_msg[MAX_BUF];
-            snprintf(error_msg, sizeof(error_msg), 
-                    "SYSTEM|ERROR|%s|Server is full", username);
-            send_to_client(username, error_msg);
-            return;
-        }
-        
-        fprintf(stderr, "Adding new user '%s' at index %d\n", username, user_count);
-        
-        // Add the new user
         strncpy(users[user_count].username, username, sizeof(users[user_count].username) - 1);
         users[user_count].username[sizeof(users[user_count].username) - 1] = '\0';
         users[user_count].active = 1;
         users[user_count].last_active = time(NULL);
         user_count++;
         
-        snprintf(log_msg, sizeof(log_msg), "User %s joined", username);
+        snprintf(log_msg, MAX_BUF, "User %s joined", username);
         add_log_entry(log_msg, LOG_INFO);
-    }
-    
-    // Force update dashboard to show new user
-    display_dashboard();
-    
-    // Welcome message to the new user
-    char welcome_msg[MAX_BUF];
-    snprintf(welcome_msg, sizeof(welcome_msg), 
-            "SYSTEM|JOIN|%s|Welcome to the chat server!", username);
-    send_to_client(username, welcome_msg);
-    
-    // Notify other users
-    char notify_msg[MAX_BUF];
-    snprintf(notify_msg, sizeof(notify_msg), 
-            "SYSTEM|JOIN|%s|User %s has joined the chat", username, username);
-    
-    for (int i = 0; i < user_count; i++) {
-        if (users[i].active && strcmp(users[i].username, username) != 0) {
-            send_to_client(users[i].username, notify_msg);
+        
+        // Notify all users about the new user
+        char notification[MAX_BUF];
+        snprintf(notification, MAX_BUF, "SYSTEM\nJOIN\n%s\nUser %s joined the chat", username, username);
+        forward_message(notification);
+    } else {
+        snprintf(log_msg, MAX_BUF, "Rejected join request from %s: Server full", username);
+        add_log_entry(log_msg, LOG_WARNING);
+        
+        // Notify the user that the server is full
+        snprintf(client_fifo, sizeof(client_fifo), CLIENT_FIFO_TEMPLATE, username);
+        int fd = open(client_fifo, O_WRONLY | O_NONBLOCK);
+        if (fd != -1) {
+            char msg[] = "SYSTEM\nERROR\n\nServer is full";
+            write(fd, msg, strlen(msg));
+            close(fd);
         }
     }
 }
 
-// Handle user leaving
 void handle_leave(char *username) {
     int idx = find_user(username);
-    if (idx == -1) {
-        // User not found
-        char log_msg[MAX_BUF];
-        snprintf(log_msg, sizeof(log_msg), 
-                "Unknown user %s tried to leave", username);
-        add_log_entry(log_msg, LOG_WARNING);
-        return;
-    }
-    
-    // Mark user as inactive
-    users[idx].active = 0;
-    
     char log_msg[MAX_BUF];
-    snprintf(log_msg, sizeof(log_msg), "User %s left", username);
-    add_log_entry(log_msg, LOG_INFO);
     
-    // Notify other users
-    char leave_msg[MAX_BUF];
-    snprintf(leave_msg, sizeof(leave_msg), 
-            "SYSTEM|LEAVE|%s|User %s has left the chat", username, username);
-    
-    for (int i = 0; i < user_count; i++) {
-        if (users[i].active && strcmp(users[i].username, username) != 0) {
-            send_to_client(users[i].username, leave_msg);
-        }
+    if (idx != -1) {
+        users[idx].active = 0;
+        snprintf(log_msg, MAX_BUF, "User %s left", username);
+        add_log_entry(log_msg, LOG_INFO);
+        
+        // Notify all users
+        char notification[MAX_BUF];
+        snprintf(notification, MAX_BUF, "SYSTEM\nLEAVE\n%s\nUser %s left the chat", username, username);
+        forward_message(notification);
+        
+        // Clean up user's FIFO
+        char client_fifo[100];
+        snprintf(client_fifo, sizeof(client_fifo), CLIENT_FIFO_TEMPLATE, username);
+        unlink(client_fifo);
     }
 }
 
-// Handle request for user list
 void handle_list_request(char *requester) {
-    char user_list[MAX_BUF] = "";
-    int count = 0;
+    char list[MAX_BUF] = "";
+    char *current = list;
+    int remaining = MAX_BUF;
+    int first = 1;
     
     // Build list of active users
     for (int i = 0; i < user_count; i++) {
         if (users[i].active) {
-            // Add comma separator if not the first user
-            if (count > 0) {
-                strcat(user_list, ", ");
+            int written;
+            if (first) {
+                written = snprintf(current, remaining, "%s", users[i].username);
+                first = 0;
+            } else {
+                written = snprintf(current, remaining, ",%s", users[i].username);
             }
             
-            // Add username to list
-            strcat(user_list, users[i].username);
-            count++;
+            if (written >= remaining) break;  // Buffer full
+            current += written;
+            remaining -= written;
         }
     }
     
-    // Send user list to requester
-    char message[MAX_BUF];
-    snprintf(message, sizeof(message), "SYSTEM|LIST|%s|%s", requester, user_list);
-    send_to_client(requester, message);
-    
-    // Log the request
-    char log_msg[MAX_BUF];
-    snprintf(log_msg, sizeof(log_msg), "User list requested by %s", requester);
-    add_log_entry(log_msg, LOG_INFO);
+    // Send the list to the requester
+    char response[MAX_BUF];
+    snprintf(response, MAX_BUF, "SYSTEM\nLIST\n%s\n%s", requester, list);
+    send_to_client(requester, response);
 }
 
-// Handle private message
 void handle_private_message(char *source, char *dest, char *content) {
-    int dest_idx = find_user(dest);
-    
-    if (dest_idx == -1) {
-        // Destination user not found
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), 
-                "SYSTEM|ERROR|%s|User %s not found or not online", source, dest);
-        send_to_client(source, error_msg);
-        
-        char log_msg[MAX_BUF];
-        snprintf(log_msg, sizeof(log_msg), 
-                "Private message from %s to unknown user %s", source, dest);
-        add_log_entry(log_msg, LOG_WARNING);
-        return;
-    }
-    
-    if (!users[dest_idx].active) {
-        // Destination user not active
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), 
-                "SYSTEM|ERROR|%s|User %s is not online", source, dest);
-        send_to_client(source, error_msg);
-        
-        char log_msg[MAX_BUF];
-        snprintf(log_msg, sizeof(log_msg), 
-                "Private message from %s to offline user %s", source, dest);
-        add_log_entry(log_msg, LOG_WARNING);
-        return;
-    }
-    
-    // Send to destination user
-    char private_msg[MAX_BUF];
-    snprintf(private_msg, sizeof(private_msg), 
-            "%s|PRIV|%s|%s", source, dest, content);
-    send_to_client(dest, private_msg);
-    
-    // Echo back to sender
-    snprintf(private_msg, sizeof(private_msg), 
-            "%s|PRIV|%s|%s", source, dest, content);
-    send_to_client(source, private_msg);
-    
-    // Log the message
     char log_msg[MAX_BUF];
-    snprintf(log_msg, sizeof(log_msg), 
-            "Private message from %s to %s: %s", source, dest, content);
+    snprintf(log_msg, MAX_BUF, "Private message from %s to %s: %s", source, dest, content);
     add_log_entry(log_msg, LOG_MESSAGE);
+    
+    // Parse destination users (comma separated list)
+    char dest_copy[MAX_BUF];
+    strncpy(dest_copy, dest, MAX_BUF-1);
+    dest_copy[MAX_BUF-1] = '\0';
+    
+    char message[MAX_BUF];
+    snprintf(message, MAX_BUF, "PRIV|%s|%s|%s", source, dest, content);
+    
+    char *token = strtok(dest_copy, ",");
+    while (token != NULL) {
+        int idx = find_user(token);
+        if (idx != -1) {
+            // Forward to the recipient
+            send_to_client(token, message);
+        }
+        token = strtok(NULL, ",");
+    }
+    
+    // Also send back to the sender
+    send_to_client(source, message);
 }
 
-// Process a message from a client
 void process_message(char *message) {
-    if (message == NULL || strlen(message) == 0) {
-        add_log_entry("Received empty message", LOG_WARNING);
-        return;
-    }
+    char type[10] = {0};
+    char source[32] = {0};
+    char dest[MAX_BUF] = {0};
+    char content[MAX_BUF] = {0};
     
-    char *msg_copy = strdup(message);
-    if (msg_copy == NULL) {
-        add_log_entry("Memory allocation error processing message", LOG_ERROR);
-        return;
-    }
-    
-    // Parse message format: TYPE|SOURCE|DEST|CONTENT
-    char *type = msg_copy;
-    char *source = NULL;
-    char *dest = NULL;
-    char *content = NULL;
-    
-    // Find first pipe
-    char *pipe = strchr(type, '|');
-    if (pipe != NULL) {
-        *pipe = '\0';
-        source = pipe + 1;
-        
-        // Find second pipe
-        pipe = strchr(source, '|');
-        if (pipe != NULL) {
-            *pipe = '\0';
-            dest = pipe + 1;
-            
-            // Find third pipe
-            pipe = strchr(dest, '|');
-            if (pipe != NULL) {
-                *pipe = '\0';
-                content = pipe + 1;
-            }
-        }
-    }
-    
-    if (type == NULL || source == NULL) {
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), "Invalid message format: %s", message);
-        add_log_entry(error_msg, LOG_WARNING);
-        free(msg_copy);
-        return;
-    }
-    
-    // Log the message
+    // Add raw message to log
     char log_msg[MAX_BUF];
-    snprintf(log_msg, sizeof(log_msg), "Received %s message from %s", type, source);
+    snprintf(log_msg, MAX_BUF, "Received: %s", message);
     add_log_entry(log_msg, LOG_INFO);
     
-    // Process based on message type
-    if (strcmp(type, "JOIN") == 0) {
-        handle_join(source);
-        // Only update dashboard for user joins
-        display_dashboard();
-    } else if (strcmp(type, "LEAVE") == 0) {
-        handle_leave(source);
-        // Only update dashboard for user leaves
-        display_dashboard(); 
-    } else if (strcmp(type, "LIST") == 0) {
-        handle_list_request(source);
-    } else if (strcmp(type, "MSG") == 0) {
-        // Broadcast message to all users
-        char formatted_msg[MAX_BUF];
-        
-        // Format as SOURCE|TYPE|DEST|CONTENT for clients
-        snprintf(formatted_msg, sizeof(formatted_msg), "%s|MSG||%s", 
-                source, content ? content : "");
-        
-        forward_message(formatted_msg);
-        
-        // Log the message
-        snprintf(log_msg, sizeof(log_msg), "<%s> %s", source, content ? content : "");
-        add_log_entry(log_msg, LOG_MESSAGE);
-    } else if (strcmp(type, "PRIV") == 0) {
-        if (dest && strlen(dest) > 0 && content) {
-            handle_private_message(source, dest, content);
-        } else {
-            char error_msg[MAX_BUF];
-            snprintf(error_msg, sizeof(error_msg), 
-                    "SYSTEM|ERROR|%s|Private message format invalid", source);
-            send_to_client(source, error_msg);
-            add_log_entry("Invalid private message format", LOG_WARNING);
+    // Parse message: TYPE|SOURCE|DEST|CONTENT
+    // Format is TYPE|SOURCE|DEST|CONTENT, but DEST and CONTENT might be empty
+    int parsed = 0;
+    char *msg_copy = NULL;
+    
+    if (message != NULL) {
+        msg_copy = strdup(message);
+        if (msg_copy == NULL) {
+            add_log_entry("Failed to allocate memory for message parsing", LOG_ERROR);
+            return;
         }
     } else {
-        // Unknown message type
-        char error_msg[MAX_BUF];
-        snprintf(error_msg, sizeof(error_msg), 
-                "SYSTEM|ERROR|%s|Unknown message type: %s", source, type);
-        send_to_client(source, error_msg);
-        
-        snprintf(log_msg, sizeof(log_msg), "Unknown message type from %s: %s", source, type);
-        add_log_entry(log_msg, LOG_WARNING);
+        add_log_entry("Received NULL message", LOG_ERROR);
+        return;
     }
     
-    free(msg_copy);
+    char *token;
+    int field = 0;
     
-    // Don't automatically update the dashboard after every message
-    // The specific message handlers will update when needed
+    token = strtok(msg_copy, "|");
+    while (token != NULL && field < 4) {
+        switch (field) {
+            case 0: // type
+                strncpy(type, token, sizeof(type) - 1);
+                break;
+            case 1: // source
+                strncpy(source, token, sizeof(source) - 1);
+                break;
+            case 2: // dest
+                strncpy(dest, token, sizeof(dest) - 1);
+                break;
+            case 3: // content
+                strncpy(content, token, sizeof(content) - 1);
+                break;
+        }
+        field++;
+        
+        // For content, get the rest of the message
+        if (field == 3) {
+            token = strtok(NULL, "");
+            if (token != NULL) {
+                strncpy(content, token, sizeof(content) - 1);
+            }
+            break;
+        } else {
+            token = strtok(NULL, "|");
+        }
+    }
+    
+    parsed = field;
+    
+    // Log parsed message
+    char log_msg2[MAX_BUF];
+    snprintf(log_msg2, MAX_BUF, "Parsed: type=[%s], source=[%s], dest=[%s], content=[%s]", 
+           type, source, dest, content);
+    add_log_entry(log_msg2, LOG_INFO);
+    
+    // We need at least type and source fields
+    if (parsed >= 2) {
+        if (strcmp(type, "JOIN") == 0) {
+            handle_join(source);
+        } else if (strcmp(type, "LEAVE") == 0) {
+            handle_leave(source);
+        } else if (strcmp(type, "LIST") == 0) {
+            handle_list_request(source);
+        } else if (strcmp(type, "MSG") == 0) {
+            // Broadcast message
+            char log_msg3[MAX_BUF];
+            snprintf(log_msg3, MAX_BUF, "Broadcast from %s: %s", source, content);
+            add_log_entry(log_msg3, LOG_MESSAGE);
+            
+            // Forward to all active users
+            char broadcast[MAX_BUF];
+            snprintf(broadcast, MAX_BUF, "MSG|%s|ALL|%s", source, content);
+            
+            for (int i = 0; i < user_count; i++) {
+                if (users[i].active && strcmp(users[i].username, source) != 0) {
+                    send_to_client(users[i].username, broadcast);
+                }
+            }
+        } else if (strcmp(type, "PRIV") == 0) {
+            handle_private_message(source, dest, content);
+        }
+        
+        // Update user's last active time
+        int idx = find_user(source);
+        if (idx != -1) {
+            users[idx].last_active = time(NULL);
+        }
+    } else {
+        char log_msg3[MAX_BUF];
+        snprintf(log_msg3, MAX_BUF, "Invalid message format (parsed %d fields): %s", parsed, message);
+        add_log_entry(log_msg3, LOG_ERROR);
+    }
+    
+    free(msg_copy); // Free the allocated memory
 }
 
 void remove_inactive_users() {
@@ -587,7 +511,7 @@ void remove_inactive_users() {
             
             // Notify all users
             char notification[MAX_BUF];
-            snprintf(notification, MAX_BUF, "SYSTEM|LEAVE|%s|User %s disconnected (timeout)", 
+            snprintf(notification, MAX_BUF, "SYSTEM\nLEAVE\n%s\nUser %s disconnected (timeout)", 
                     users[i].username, users[i].username);
             forward_message(notification);
             
@@ -601,15 +525,16 @@ void remove_inactive_users() {
 
 // Forward a message to all active users
 void forward_message(char *message) {
+    char log_msg[MAX_BUF];
+    snprintf(log_msg, MAX_BUF, "Broadcasting: %s", message);
+    add_log_entry(log_msg, LOG_INFO);
+    
+    // Send to all active users
     for (int i = 0; i < user_count; i++) {
         if (users[i].active) {
             send_to_client(users[i].username, message);
         }
     }
-    
-    char log_msg[MAX_BUF];
-    snprintf(log_msg, sizeof(log_msg), "Message forwarded to %d active users", user_count);
-    add_log_entry(log_msg, LOG_INFO);
 }
 
 int main() {
