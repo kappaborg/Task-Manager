@@ -26,6 +26,11 @@ typedef struct {
 void list_all_processes(void);
 
 /**
+ * Lists all processes running on the system with threads
+ */
+void list_all_processes_with_threads(void);
+
+/**
  * Filters processes by name
  * @param name The name to filter by
  */
@@ -124,5 +129,9 @@ void remove_scheduled_task(int task_index);
 void run_task_scheduler(void);
 void stop_task_scheduler(void);
 void filter_tasks_by_name(const char* name);
+
+void list_threads_of_process(pid_t pid);
+
+void get_thread_summary_for_table(pid_t pid, int *thread_count, char *summary, size_t summary_size);
 
 #endif 

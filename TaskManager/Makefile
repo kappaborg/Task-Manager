@@ -1,33 +1,22 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -std=c99 -O2
-DEBUG_CFLAGS = -Wall -Wextra -pedantic -std=c99 -g -DDEBUG
-PROCESS_MANAGER = process_manager
-SRCS = main.c process_manager.c
-OBJS = $(SRCS:.c=.o)
-LDFLAGS = -pthread
-all: $(PROCESS_MANAGER) chat_app
+CFLAGS = -Wall -g
+LIBS = -framework ApplicationServices
 
-debug: CFLAGS = $(DEBUG_CFLAGS)
-debug: $(PROCESS_MANAGER)
+all: process_manager
 
-$(PROCESS_MANAGER): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS)
+process_manager: main.o process_manager.o threadFinder.o
+	$(CC) $(CFLAGS) -o process_manager main.o process_manager.o threadFinder.o $(LIBS)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+main.o: main.c process_manager.h
+	$(CC) $(CFLAGS) -c main.c
 
-chat_app:
-	$(MAKE) -C "Chat App"
+process_manager.o: process_manager.c process_manager.h
+	$(CC) $(CFLAGS) -c process_manager.c
+
+threadFinder.o: threadFinder.c
+	$(CC) $(CFLAGS) -c threadFinder.c
 
 clean:
-	rm -f $(OBJS) $(PROCESS_MANAGER) *~ \#*\#
-	$(MAKE) -C "Chat App" clean
+	rm -f main.o process_manager.o threadFinder.o process_manager *~ \#*\#
 
-install: $(PROCESS_MANAGER)
-	mkdir -p $(HOME)/bin
-	cp $(PROCESS_MANAGER) $(HOME)/bin/
-
-uninstall:
-	rm -f $(HOME)/bin/$(PROCESS_MANAGER)
-
-.PHONY: all debug clean install uninstall chat_app 
+.PHONY: clean all 

@@ -282,33 +282,41 @@ void stop_task_scheduler(void) {
         printf("Task scheduler stopped.\n");
     }
 }
-
+//Threads adding v1.2.0
+//for adding thread instead of usin ps now using top to similar output like ps aux
 void list_all_processes(void) {
-    pid_t pid = fork();
-    
-    if (pid < 0) {
-        perror("Fork failed");
+    FILE *fp = popen("top -l 1 -stats user,pid,cpu,mem,vsize,rsize,state,time,command,threads", "r");
+    if (!fp) {
+        perror("Failed to run top command");
         return;
-    } else if (pid == 0) {
-        // Child process
-        // macOS için daha detaylı çıktı
-        execlp("ps", "ps", "aux", NULL);
-        perror("Failed to execute ps command");
-        exit(EXIT_FAILURE);
-    } else {
-        // Parent process
-        int status;
-        if (waitpid(pid, &status, 0) == -1) {
-            perror("waitpid failed");
-            return;
+    }
+
+    char line[1024];
+    int is_header = 1;
+    while (fgets(line, sizeof(line), fp)) {
+        // Print header as is
+        if (is_header) {
+            printf("%s", line);
+            if (strstr(line, "COMMAND") && strstr(line, "THREADS")) {
+                is_header = 0;
+            }
+            continue;
         }
-        
-        if (!WIFEXITED(status)) {
-            printf("Process terminated abnormally\n");
-        } else if (WEXITSTATUS(status) != 0) {
-            printf("Command failed with status: %d\n", WEXITSTATUS(status));
+        // Print process line
+        printf("%s", line);
+        // Try to extract PID and thread count
+        char user[64], command[256], state[32];
+        int pid = 0, threads = 0;
+        float cpu = 0, mem = 0;
+        char vsize[32], rsize[32], time[32];
+        int n = sscanf(line, "%63s %d %f %f %31s %31s %31s %31s %255s %d",
+            user, &pid, &cpu, &mem, vsize, rsize, state, time, command, &threads);
+        if (n >= 2 && pid > 0 && threads > 0) {
+            // Print thread details for this process
+            list_threads_of_process(pid);
         }
     }
+    pclose(fp);
 }
 
 void filter_processes_by_name(const char *name) {
@@ -617,8 +625,7 @@ void display_process_tree(pid_t root_pid) {
 }
 
 void show_top_resource_usage(int sort_by, int count) {
-    count = count + 1;
-    sort_by = sort_by;
+    count = count +1;
     if (count <= 0) {
         count = 10; // Default to top 10 if you want you can change it but believe me after 10 in terminal you will see a lot of processes. So hard to see.
     }
@@ -844,7 +851,7 @@ int process_group_operation(const char *pattern, int pattern_type, int operation
             case 1: // Filter by name
                 /*
                 For Windows
-                snprintf(command, sizeof(command), "wmic process where \"Name like '%%%s%%'\" get ProcessId /format:list | findstr /R \"ProcessId=\"", pattern);
+                snprintf(command, sizeof(command), "wmic process where \"Name like '%%%s%%'\" get ProcessId /format:list | findstr /R \"ProcessId=\"");
                 */
                 snprintf(command, sizeof(command), "ps -ax | grep -i \"%s\" | grep -v grep | awk '{print $1}'", pattern);
                 break;
@@ -1005,4 +1012,46 @@ void filter_tasks_by_name(const char *name) {
         printf("No tasks found matching '%s'\n", name);
     }
     pthread_mutex_unlock(&task_mutex);
+}
+
+void list_all_processes_with_threads(void) {
+    FILE *fp = popen("ps -axo user,pid,%cpu,%mem,vsz,rss,state,time,comm", "r");
+    if (!fp) {
+        perror("Failed to run ps command");
+        return;
+    }
+
+    // Print table header with borders - increased widths and better spacing
+    printf("╔═══════════════════╦════════════╦═════════╦═════════╦═════════════╦═════════════╦═════════╦═════════════╦══════════════════════════════════════════╦═══════╦═══════════════════════════════════════════════════╗\n");
+    printf("║      USER         ║    PID     ║   CPU   ║   MEM   ║    VSIZE   ║     RSS    ║  STATE  ║    TIME     ║                 COMMAND                   ║  #TH  ║                THREAD DETAILS                    ║\n");
+    printf("╠═══════════════════╬════════════╬═════════╬═════════╬═════════════╬═════════════╬═════════╬═════════════╬══════════════════════════════════════════╬═══════╬═══════════════════════════════════════════════════╣\n");
+
+    char line[1024];
+    // Skip the header line from ps output
+    fgets(line, sizeof(line), fp);
+
+    // Process each line
+    while (fgets(line, sizeof(line), fp)) {
+        char user[32], state[8], time[16], command[256];
+        pid_t pid;
+        float cpu, mem;
+        unsigned long vsz, rss;
+        
+        if (sscanf(line, "%31s %d %f %f %lu %lu %7s %15s %255[^\n]",
+                   user, &pid, &cpu, &mem, &vsz, &rss, state, time, command) == 9) {
+            
+            // Get thread information
+            int thread_count = 0;
+            char thread_summary[256] = {0};
+            get_thread_summary_for_table(pid, &thread_count, thread_summary, sizeof(thread_summary));
+
+            // Print process information with thread details
+            printf("║ %-17s ║ %-10d ║ %7.1f ║ %7.1f ║ %11lu ║ %11lu ║ %-7s ║ %-11s ║ %-40.40s ║ %5d ║ %-47.47s ║\n",
+                   user, pid, cpu, mem, vsz, rss, state, time, command, thread_count, thread_summary);
+        }
+    }
+
+    printf("╚═══════════════════╩════════════╩═════════╩═════════╩═════════════╩═════════════╩═════════╩═════════════╩══════════════════════════════════════════╩═══════╩═══════════════════════════════════════════════════╝\n");
+
+    pclose(fp);
 } 

@@ -10,6 +10,12 @@
 #include <time.h>
 #include "process_manager.h"
 
+#define DEFAULT_PORT 8990
+#define MAX_MENU_ITEMS 15
+#define KEY_UP 65
+#define KEY_DOWN 66
+#define KEY_ENTER 10
+
 // Function to handle terminal settings for interactive mode
 struct termios orig_termios;
 
@@ -46,16 +52,16 @@ void display_welcome_screen(void) {
     printf("                            `\\   \\___/    /'                                     \n");
     printf("                              `--. .--'                                          \n");
     printf("\033[1;31m");
-    printf("         _  __     _    ____  ____      _    ____  _   _ _____ ____      _     \n");
-    printf("        | |/ /    / \\  |  _ \\|  _ \\    / \\  / ___|| | | |_   _|  _ \\    / \\    \n");
-    printf("        | ' /    / _ \\ | |_) | |_) |  / _ \\ \\___ \\| | | | | | | |_) |  / _ \\   \n");
+    printf("         _  __     _    ____  ____       _    ____  _   _ _____ ____      _     \n");
+    printf("        | |/ /    / \\  |  _ \\|  _ \\     / \\  / ___|| | | |_   _|  _ \\    / \\    \n");
+    printf("        | ' /    / _ \\ | |_) | |_) |   / _ \\ \\___ \\| | | | | | | |_) |  / _ \\   \n");
     printf("\033[1;33m");
-    printf("        | . \\   / ___ \\|  __/|  __/  / ___ \\ ___) | |_| | | | |  _ <  / ___ \\  \n");
-    printf("        |_|\\_\\ /_/   \\_\\_|   |_|    /_/   \\_\\____/ \\___/  |_| |_| \\_\\/_/   \\_\\ \n");
+    printf("        | . \\   / ___ \\|  __/|  __/   / ___ \\ ___) | |_| | | | |  _ <  / ___ \\  \n");
+    printf("        |_|\\_\\ /_/   \\_\\_|   |_|     /_/   \\_\\____/ \\___/  |_| |_| \\_\\/_/   \\_\\ \n");
     printf("                                                                                \n");
     printf("\033[0m");
     
-    printf("\033[1;34m");
+    printf("\033[1;34m"); // Açık mavi
     printf("=============================================================================================\n");
     printf("|     _____                               __  __                                            |\n");
     printf("|    |  __ \\                             |  \\/  |                                           |\n");
@@ -66,463 +72,191 @@ void display_welcome_screen(void) {
     printf("|                                                                   __/ |                   |\n");
     printf("|                                                                  |___/                    |\n");
     printf("=============================================================================================\n");
-    printf("\033[1;36m");
+    printf("\033[1;36m"); // Açık camgöbeği
     printf("            Unix/Linux Process Manager & Task Scheduler - v1.0\n\n");
-    printf("\033[1;32m");
+    printf("\033[1;32m"); // Açık yeşil
     printf("                   Developed by: \033[1;38;5;208mkappasutra\033[0m\n\n");
-    printf("\033[0m"); 
+    printf("\033[0m"); // Renkleri sıfırla
 }
 
-void display_menu(void) {
-    clear_screen();
+// Global variables for menu
+int current_selection = 0;
 
-    printf("\n========== Process Manager ==========\n");
-    printf("1. List all processes\n");
-    printf("2. Filter processes by name\n");
-    printf("3. Find process by PID\n");
-    printf("4. Terminate a process\n");
-    printf("5. Change process priority\n");
-    printf("6. Show process states information\n");
-    printf("7. Display process tree\n");
-    printf("8. Show top resource usage\n");
-    printf("9. Group operations\n");
-    printf("10. Chat App\n");
-    printf("11. Task Scheduler\n");
-    printf("0. Exit\n");
-    printf("====================================\n");
-    printf("Enter your choice: ");
-}
-
-void handle_group_operations(void) {
-    int pattern_type, operation, param = 0;
-    char pattern[256];
-    
+void print_menu(void) {
     clear_screen();
-    printf("\n========== Group Operations ==========\n");
-    printf("Select pattern type:\n");
-    printf("1. Process name\n");
-    printf("2. Username\n");
-    printf("3. Process state\n");
-    printf("Enter your choice (1-3): ");
-    scanf("%d", &pattern_type);
-    getchar(); 
+    printf("\nProcess Manager Menu:\n\n");
     
-    if (pattern_type < 1 || pattern_type > 3) {
-        printf("Invalid choice\n");
-        return;
-    }
+    const char *menu_items[] = {
+        "List all processes",
+        "Filter processes by name",
+        "Find process by PID",
+        "Terminate process",
+        "Change process priority",
+        "Show process states info",
+        "Display process tree",
+        "Show top resource usage",
+        "Schedule task",
+        "List scheduled tasks",
+        "Remove scheduled task",
+        "Add demo task",
+        "Filter tasks by name",
+        "Start chat server",
+        "Connect to chat"
+    };
     
-    printf("Enter pattern to match: ");
-    fgets(pattern, sizeof(pattern), stdin);
-    pattern[strcspn(pattern, "\n")] = 0; 
-    
-    printf("\nSelect operation:\n");
-    printf("1. Terminate processes\n");
-    printf("2. Change priority\n");
-    printf("Enter your choice (1-2): ");
-    scanf("%d", &operation);
-    getchar(); 
-    
-    if (operation < 1 || operation > 2) {
-        printf("Invalid choice\n");
-        return;
-    }
-    
-    if (operation == 2) {
-        printf("Enter new priority (-20 to 19, lower is higher priority): ");
-        scanf("%d", &param);
-        getchar(); 
-        
-        if (param < -20 || param > 19) {
-            printf("Invalid priority value\n");
-            return;
+    for (int i = 0; i < MAX_MENU_ITEMS; i++) {
+        if (i == current_selection) {
+            printf("\033[1;32m-> %d. %s\033[0m\n", i + 1, menu_items[i]);
+        } else {
+            printf("   %d. %s\n", i + 1, menu_items[i]);
         }
     }
-    
-    process_group_operation(pattern, pattern_type, operation, param);
+    printf("\n   0. Exit\n");
+    printf("\nUse arrow keys to navigate, Enter to select\n");
 }
 
-void handle_resource_usage(void) {
-    int sort_by, count;
-    
-    clear_screen();
-    printf("\n========== Resource Usage ==========\n");
-    printf("Sort by:\n");
-    printf("1. CPU usage\n");
-    printf("2. Memory usage\n");
-    printf("Enter your choice (1-2): ");
-    scanf("%d", &sort_by);
-    getchar();   
-    
-    if (sort_by < 1 || sort_by > 2) {
-        printf("Invalid choice\n");
-        return;
-    }
-    
-    printf("Enter number of processes to show: ");
-    scanf("%d", &count);
-    getchar(); 
-    
-    if (count <= 0) {
-        printf("Invalid count\n");
-        return;
-    }
-    
-    show_top_resource_usage(sort_by, count);
-}
-
-void handle_process_tree(void) {
-    pid_t pid;
-    
-    clear_screen();
-    printf("\n========== Process Tree ==========\n");
-    printf("1. Show all processes\n");
-    printf("2. Show tree for specific PID\n");
-    printf("Enter your choice (1-2): ");
-    
-    int choice;
-    scanf("%d", &choice);
-    getchar(); 
-    
-    if (choice == 1) {
-        display_process_tree(0);
-    } else if (choice == 2) {
-        printf("Enter PID: ");
-        scanf("%d", &pid);
-        getchar(); 
-        
-        if (pid <= 0) {
-            printf("Invalid PID\n");
-            return;
-        }
-        
-        display_process_tree(pid);
-    } else {
-        printf("Invalid choice\n");
-    }
-}
-
-void start_chat_application(void) {
-    clear_screen();
-    printf("\n========== Chat Application ==========\n");
-    printf("1. Start Server\n");
-    printf("2. Start Client (Terminal UI)\n");
-    printf("3. Start Client (Basic)\n");
-    printf("0. Back to main menu\n");
-    printf("=====================================\n");
-    printf("Enter your choice: ");
-
-    int choice;
-    scanf("%d", &choice);
-    getchar(); 
-
-    pid_t pid;
-    char *chat_app_dir = "Chat App/";
-    char path[256];
-
-    switch(choice) {
-        case 1:
-            snprintf(path, sizeof(path), "%s%s", chat_app_dir, "server");
-            pid = fork();
-            if (pid == 0) {
-                execl(path, "server", NULL);
-                perror("Failed to start server");
-                exit(1);
-            }
-            printf("Server started with PID: %d\n", pid);
-            break;
-        case 2:
-            snprintf(path, sizeof(path), "%s%s", chat_app_dir, "client_tui");
-            pid = fork();
-            if (pid == 0) {
-                execl(path, "client_tui", NULL);
-                perror("Failed to start TUI client");
-                exit(1);
-            }
-            break;
-        case 3:
-            snprintf(path, sizeof(path), "%s%s", chat_app_dir, "client");
-            pid = fork();
-            if (pid == 0) {
-                execl(path, "client", NULL);
-                perror("Failed to start basic client");
-                exit(1);
-            }
-            break;
-        case 0:
-            return;
-        default:
-            printf("Invalid option\n");
-            sleep(2);
-    }
-}
-
-void handle_task_scheduler(void) {
-    clear_screen();
-    printf("\n========== Task Scheduler ==========\n");
-    printf("1. List scheduled tasks\n");
-    printf("2. Add new task\n");
-    printf("3. Remove task\n");
-    printf("4. Start scheduler\n");
-    printf("5. Stop scheduler\n");
-    printf("6. Filter tasks by name\n");
-    printf("7. Add demo task (öncelik değiştirme için)\n");
-    printf("0. Back to main menu\n");
-    printf("===================================\n");
-    printf("Enter your choice: ");
-
-    int choice;
-    scanf("%d", &choice);
-    getchar();
-
-    switch(choice) {
-        case 1:
-            list_scheduled_tasks();
-            break;
-        case 2: {
-            char command[256];
-            int type;
-            time_t execution_time;
-            int interval = 0;
-            struct tm tm = {0};
-            
-            printf("Enter command to execute: ");
-            fgets(command, sizeof(command), stdin);
-            command[strcspn(command, "\n")] = 0;
-            
-            printf("\nSchedule type:\n");
-            printf("1. Run once at specific time\n");
-            printf("2. Run at intervals\n");
-            printf("3. Run daily at specific time\n");
-            printf("Enter choice (1-3): ");
-            scanf("%d", &type);
-            getchar();
-            
-            switch(type - 1) {
-                case ONCE:
-                case DAILY:
-                    printf("Enter execution time (YYYY MM DD HH MM): ");
-                    scanf("%d %d %d %d %d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, 
-                          &tm.tm_hour, &tm.tm_min);
-                    tm.tm_year -= 1900;
-                    tm.tm_mon -= 1;
-                    execution_time = mktime(&tm);
-                    break;
-                    
-                case INTERVAL:
-                    printf("Enter interval in seconds: ");
-                    scanf("%d", &interval);
-                    execution_time = time(NULL) + interval;
-                    break;
-            }
-            
-            add_scheduled_task(command, type - 1, execution_time, interval);
-            printf("Task added successfully!\n");
-            break;
-        }
-        case 3: {
-            int task_index;
-            list_scheduled_tasks();
-            printf("\nEnter task ID to remove: ");
-            scanf("%d", &task_index);
-            remove_scheduled_task(task_index - 1);
-            printf("Task removed successfully!\n");
-            break;
-        }
-        case 4:
-            run_task_scheduler();
-            break;
-        case 5:
-            stop_task_scheduler();
-            break;
-        case 6: {
-            char name[256];
-            printf("Enter search term (example: 'echo' veya 'task'): ");
-            fgets(name, sizeof(name), stdin);
-            name[strcspn(name, "\n")] = 0;
-            
-            filter_tasks_by_name(name);
-            break;
-        }
-        case 7: {
-            char name[256];
-            printf("Demo görev için kısa bir ad girin: ");
-            fgets(name, sizeof(name), stdin);
-            name[strcspn(name, "\n")] = 0;
-            
-            if (strlen(name) == 0) {
-                strcpy(name, "PID Demo");  // Default ad
-            }
-            
-            add_demo_task(name);
-            printf("\nDemo görev eklendi. Görev listesini görüntülemek için '1' seçeneğini kullanın.\n");
-            printf("Sabit bir PID ile çalışan bir süreç görmek için scheduler'ı başlatın (4. seçenek).\n");
-            printf("Daha sonra ana menüye dönüp 'Change process priority' ile bu PID'nin önceliğini değiştirebilirsiniz.\n");
-            break;
-        }
-        case 0:
-            return;
-        default:
-            printf("Invalid option\n");
-            sleep(2);
-    }
-    
-    printf("\nPress any key to continue...");
-    getchar();
-}
-
-int interactive_mode(void) {
+int get_menu_choice(void) {
     enable_raw_mode();
-    
-    int selected = 1;
-    int running = 1;
-    
-    while (running) {
-        clear_screen();
-        printf("\n========== Process Manager (Interactive Mode) ==========\n");
+    int c;
+    while (1) {
+        print_menu();
+        c = getchar();
         
-        
-        for (int i = 1; i <= 11; i++) { 
-            if (i == selected) {
-                printf("> "); 
-            } else {
-                printf("  ");
-            }
-            
-            switch(i) {
-                case 1: printf("List all processes\n"); break;
-                case 2: printf("Filter processes by name\n"); break;
-                case 3: printf("Find process by PID\n"); break;
-                case 4: printf("Terminate a process\n"); break;
-                case 5: printf("Change process priority\n"); break;
-                case 6: printf("Show process states information\n"); break;
-                case 7: printf("Display process tree\n"); break;
-                case 8: printf("Show top resource usage\n"); break;
-                case 9: printf("Group operations\n"); break;
-                case 10: printf("Chat App\n"); break;
-                case 11: printf("Task Scheduler\n"); break;
-            }
-        }
-        
-        printf("\nUse arrow keys to navigate, Enter to select\n");
-        
-        char c;
-        read(STDIN_FILENO, &c, 1);
-        
-        if (c == 27) { 
-            char seq[3];
-            if (read(STDIN_FILENO, &seq[0], 1) != 1) return -1;
-            if (read(STDIN_FILENO, &seq[1], 1) != 1) return -1;
-            
-            // Arrow keys
-            if (seq[0] == '[') {
-                switch (seq[1]) {
-                    case 'A': // Up arrow
-                        selected = (selected > 1) ? selected - 1 : 11;  
+        if (c == 27) {  // ESC sequence
+            if (getchar() == '[') {
+                c = getchar();
+                switch (c) {
+                    case KEY_UP:
+                        if (current_selection > 0) {
+                            current_selection--;
+                        }
                         break;
-                    case 'B': // Down arrow
-                        selected = (selected < 11) ? selected + 1 : 1;  
+                    case KEY_DOWN:
+                        if (current_selection < MAX_MENU_ITEMS - 1) {
+                            current_selection++;
+                        }
                         break;
                 }
             }
-        } else if (c == '\r' || c == '\n') { 
+        } else if (c == KEY_ENTER) {
             disable_raw_mode();
-            
-            // Execute selected option
-            switch (selected) {
-                case 1: 
-                    list_all_processes(); 
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                case 2: {
-                    char name[256];
-                    printf("\nEnter process name to filter: ");
-                    fgets(name, sizeof(name), stdin);
-                    name[strcspn(name, "\n")] = 0;
-                    filter_processes_by_name(name);
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                }
-                case 3: {
-                    int pid;
-                    printf("\nEnter PID: ");
-                    scanf("%d", &pid);
-                    getchar();
-                    find_process_by_pid(pid);
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                }
-                case 4: {
-                    pid_t pid;
-                    printf("\nEnter PID to terminate: ");
-                    scanf("%d", &pid);
-                    getchar();
-                    terminate_process(pid);
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                }
-                case 5: {
-                    pid_t pid;
-                    int priority;
-                    printf("\nEnter PID: ");
-                    scanf("%d", &pid);
-                    getchar();
-                    printf("Enter new priority (-20 to 19): ");
-                    scanf("%d", &priority);
-                    getchar();
-                    change_process_priority(pid, priority);
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                }
-                case 6:
-                    show_process_states_info();
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                case 7:
-                    handle_process_tree();
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                case 8:
-                    handle_resource_usage();
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                case 9:
-                    handle_group_operations();
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                case 10:
-                    start_chat_application();
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-                case 11:
-                    handle_task_scheduler();
-                    printf("\nPress any key to continue...");
-                    getchar();
-                    break;
-            }
-            
-            enable_raw_mode();
-        } else if (c == 'q' || c == 'Q') {  // Quit
+            return current_selection + 1;
+        } else if (c == '0') {
             disable_raw_mode();
             return 0;
         }
     }
+}
+
+void start_chat_server(void) {
+    char port_str[10];
+    printf("Enter port number (default: %d): ", DEFAULT_PORT);
+    if (fgets(port_str, sizeof(port_str), stdin) == NULL) {
+        printf("Error reading port number\n");
+        return;
+    }
     
-    disable_raw_mode();
-    return 0;
+    // Remove newline
+    port_str[strcspn(port_str, "\n")] = 0;
+    
+    // Use default port if no input
+    if (strlen(port_str) == 0) {
+        snprintf(port_str, sizeof(port_str), "%d", DEFAULT_PORT);
+    }
+    
+    // Build command
+    char command[256];
+    snprintf(command, sizeof(command), 
+             "cd ChatApp/C && ./bin/chat_server %s", 
+             port_str);
+    
+    // Fork and exec
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("Fork failed");
+            return;
+        }
+    else if (pid == 0) {
+        // Child process
+        execl("/bin/sh", "sh", "-c", command, NULL);
+        perror("Failed to start chat server");
+        exit(EXIT_FAILURE);
+    }
+    else {
+        printf("Chat server started on port %s (PID: %d)\n", port_str, pid);
+        printf("Use option 15 to connect as a client\n");
+    }
+}
+
+void connect_to_chat(void) {
+    char server_ip[16];
+    char port_str[10];
+    
+    printf("Enter server IP (default: 127.0.0.1): ");
+    if (fgets(server_ip, sizeof(server_ip), stdin) == NULL) {
+        printf("Error reading server IP\n");
+        return;
+    }
+    
+    // Remove newline
+    server_ip[strcspn(server_ip, "\n")] = 0;
+    
+    // Use default IP if no input
+    if (strlen(server_ip) == 0) {
+        strcpy(server_ip, "127.0.0.1");
+    }
+    
+    printf("Enter port number (default: %d): ", DEFAULT_PORT);
+    if (fgets(port_str, sizeof(port_str), stdin) == NULL) {
+        printf("Error reading port number\n");
+            return;
+    }
+    
+    // Remove newline
+    port_str[strcspn(port_str, "\n")] = 0;
+    
+    // Use default port if no input
+    if (strlen(port_str) == 0) {
+        snprintf(port_str, sizeof(port_str), "%d", DEFAULT_PORT);
+    }
+    
+    // Build command
+    char command[256];
+    snprintf(command, sizeof(command), 
+             "cd ChatApp/C && ./bin/chat_client %s %s", 
+             server_ip, port_str);
+    
+    // Fork and exec
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("Fork failed");
+        return;
+    }
+    else if (pid == 0) {
+        // Child process
+        execl("/bin/sh", "sh", "-c", command, NULL);
+        perror("Failed to start chat client");
+        exit(EXIT_FAILURE);
+    }
+    else {
+        // Parent process
+        printf("Chat client started (PID: %d)\n", pid);
+        printf("Connecting to chat server...\n");
+        
+        int status;
+        waitpid(pid, &status, 0); // Wait for child process to complete
+        
+        if (WIFEXITED(status)) {
+            printf("Chat session ended.\n");
+        } else {
+            printf("Chat client terminated unexpectedly.\n");
+        }
+    }
 }
 
 int main(void) {
+    //Welcome music
+    system("afplay welcome.wav");
     init_task_scheduler();
     
     // Check if running with elevated privileges
@@ -538,7 +272,208 @@ int main(void) {
     printf("\nPress Enter to continue to main menu...");
     getchar();
     
-    interactive_mode();
-
+    int choice;
+    char input[256];
+    pid_t pid;
+    int priority;
+    char name[256];
+    char command[256];
+    
+    while (1) {
+        choice = get_menu_choice();
+        
+        if (choice == 0) {
+            printf("\nExiting...\n");
+            break;
+        }
+        
+        clear_screen();
+        
+        switch (choice) {
+            case 1:
+                list_all_processes_with_threads();
+                break;
+                
+            case 2:
+                printf("Enter process name to filter: ");
+                if (fgets(name, sizeof(name), stdin) != NULL) {
+                    name[strcspn(name, "\n")] = 0;
+                    filter_processes_by_name(name);
+                }
+                break;
+                
+            case 3:
+                printf("Enter PID: ");
+                if (fgets(input, sizeof(input), stdin) != NULL) {
+                    pid = atoi(input);
+                    if (!find_process_by_pid(pid)) {
+                        printf("Process not found\n");
+                    }
+                }
+                break;
+                
+            case 4:
+                printf("Enter PID to terminate: ");
+                if (fgets(input, sizeof(input), stdin) != NULL) {
+                    pid = atoi(input);
+                    terminate_process(pid);
+                }
+                break;
+                
+            case 5:
+                printf("Enter PID: ");
+                if (fgets(input, sizeof(input), stdin) != NULL) {
+                    pid = atoi(input);
+                    printf("Enter new priority (-20 to 19): ");
+                    if (fgets(input, sizeof(input), stdin) != NULL) {
+                        priority = atoi(input);
+                        change_process_priority(pid, priority);
+                    }
+                }
+                break;
+                
+            case 6:
+                show_process_states_info();
+                break;
+                
+            case 7:
+                printf("Enter root PID (0 for all): ");
+                if (fgets(input, sizeof(input), stdin) != NULL) {
+                    pid = atoi(input);
+                    display_process_tree(pid);
+                }
+                break;
+                
+            case 8:
+                printf("Sort by:\n");
+                printf("1. CPU Usage\n");
+                printf("2. Memory Usage\n");
+                printf("Enter choice: ");
+                if (fgets(input, sizeof(input), stdin) != NULL) {
+                    int sort_by = atoi(input);
+                    printf("Enter number of processes to show: ");
+                    if (fgets(input, sizeof(input), stdin) != NULL) {
+                        int count = atoi(input);
+                        show_top_resource_usage(sort_by, count);
+                    }
+                }
+                break;
+                
+            case 9:
+                printf("Enter command to schedule: ");
+                if (fgets(command, sizeof(command), stdin) != NULL) {
+                    command[strcspn(command, "\n")] = 0;
+                    
+                    printf("\nSchedule type:\n");
+                    printf("1. Once at specific time\n");
+                    printf("2. Repeat at interval\n");
+                    printf("3. Daily at specific time\n");
+                    printf("Enter choice: ");
+                    
+                    if (fgets(input, sizeof(input), stdin) != NULL) {
+                        int type = atoi(input);
+                        time_t execution_time = 0;
+                        int interval = 0;
+                        
+                        switch (type) {
+                            case 1: {
+                                printf("Enter execution time (YYYY-MM-DD HH:MM): ");
+                                char datetime[20];
+                                if (fgets(datetime, sizeof(datetime), stdin) != NULL) {
+                                    datetime[strcspn(datetime, "\n")] = 0;
+                                    
+                                    struct tm tm = {0};
+                                    if (sscanf(datetime, "%d-%d-%d %d:%d",
+                                             &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+                                             &tm.tm_hour, &tm.tm_min) == 5) {
+                                        tm.tm_year -= 1900;
+                                        tm.tm_mon -= 1;
+                                        execution_time = mktime(&tm);
+                                        add_scheduled_task(command, ONCE, execution_time, 0);
+                                    }
+                                }
+                                break;
+                            }
+                                
+                            case 2:
+                                printf("Enter interval in seconds: ");
+                                if (fgets(input, sizeof(input), stdin) != NULL) {
+                                    interval = atoi(input);
+                                    execution_time = time(NULL) + interval;
+                                    add_scheduled_task(command, INTERVAL, execution_time, interval);
+                                }
+                                break;
+                                
+                            case 3: {
+                                printf("Enter daily time (HH:MM): ");
+                                char time_str[6];
+                                if (fgets(time_str, sizeof(time_str), stdin) != NULL) {
+                                    time_str[strcspn(time_str, "\n")] = 0;
+                                    
+                                    int hour, min;
+                                    if (sscanf(time_str, "%d:%d", &hour, &min) == 2) {
+                                        time_t now = time(NULL);
+                                        struct tm *tm = localtime(&now);
+                                        tm->tm_hour = hour;
+                                        tm->tm_min = min;
+                                        tm->tm_sec = 0;
+                                        execution_time = mktime(tm);
+                                        
+                                        if (execution_time <= now) {
+                                            execution_time += 24 * 60 * 60;
+                                        }
+                                        
+                                        add_scheduled_task(command, DAILY, execution_time, 24 * 60 * 60);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                break;
+                
+            case 10:
+                list_scheduled_tasks();
+                break;
+                
+            case 11:
+                printf("Enter task ID to remove: ");
+                if (fgets(input, sizeof(input), stdin) != NULL) {
+                    int task_id = atoi(input) - 1;
+                    remove_scheduled_task(task_id);
+                }
+                break;
+                
+            case 12:
+                printf("Enter demo task name: ");
+                if (fgets(name, sizeof(name), stdin) != NULL) {
+                    name[strcspn(name, "\n")] = 0;
+                    add_demo_task(name);
+                }
+                break;
+                
+            case 13:
+                printf("Enter task name to filter: ");
+                if (fgets(name, sizeof(name), stdin) != NULL) {
+                    name[strcspn(name, "\n")] = 0;
+                    filter_tasks_by_name(name);
+                }
+                break;
+                
+            case 14:
+                start_chat_server();
+                break;
+                
+            case 15:
+                connect_to_chat();
+                break;
+        }
+        
+        printf("\nPress Enter to continue...");
+        getchar();
+    }
+    
+   stop_task_scheduler();
     return 0;
 } 

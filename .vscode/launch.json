@@ -6,8 +6,8 @@
       "type": "lldb",
       "request": "launch",
       "args": [],
-      "cwd": "/Users/kappasutra/a/TaskManager",
-      "program": "/Users/kappasutra/a/TaskManager/build/Debug/outDebug"
+      "cwd": "/Users/kappasutra/a/TaskManager/TaskManager",
+      "program": "/Users/kappasutra/a/TaskManager/TaskManager/build/Debug/outDebug"
     }
   ]
 }
