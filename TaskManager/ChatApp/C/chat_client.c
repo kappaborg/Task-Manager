@@ -11,14 +11,21 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <termios.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include "network_config.h"
 #include "security.h"
+#include "ui_components.h"
 
 #define BUFFER_SIZE 4096
 #define NAME_LENGTH 32
-#define MAX_FILE_SIZE (10 * 1024 * 1024) // 10MB
+#define MAX_FILE_SIZE (100 * 1024 * 1024) // 100MB
+#define MAX_USERS_PER_ROOM 20
 
 // Global variables
+SSL *ssl;
+SSL_CTX *ssl_ctx;
 int client_socket;
 bool connected = false;
 bool authenticated = false;
@@ -26,6 +33,7 @@ char username[NAME_LENGTH];
 bool running = true;
 int current_room = 0;
 auth_data_t auth;
+ui_state_t ui_state;
 
 // Function prototypes
 void *receive_messages(void *arg);
@@ -36,81 +44,173 @@ void cleanup();
 void show_help();
 void handle_file_receive(char *message);
 void send_file(const char *recipient, const char *filepath);
+void join_room(int room_id);
+void create_room(const char *room_name);
+void set_status(const char *status, const char *message);
+void list_users();
+void handle_admin_command(const char *command);
+void update_ui();
+
+// Initialize OpenSSL
+void init_openssl() {
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    
+    ssl_ctx = SSL_CTX_new(TLS_client_method());
+    if (!ssl_ctx) {
+        perror("Failed to create SSL context");
+        exit(EXIT_FAILURE);
+    }
+    
+    // Set up certificate verification
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_load_verify_locations(ssl_ctx, "certs/ca.crt", NULL);
+}
 
 // Show available commands
 void show_help() {
-    printf("\nAvailable commands:\n");
-    printf("/msg <username> <message> - Send private message\n");
-    printf("/status <online|away|busy> [message] - Change status\n");
-    printf("/join <room_id> - Join a chat room\n");
-    printf("/create <room_name> - Create a new chat room\n");
-    printf("/file <username> <filepath> - Send file to user\n");
-    printf("/list - Show online users\n");
-    printf("/help - Show this help message\n");
-    printf("/exit - Exit the chat\n\n");
+    ui_clear_screen();
+    printf("\n=== Chat Client Help ===\n\n");
+    printf("Basic Commands:\n");
+    printf("  /msg <username> <message> - Send private message\n");
+    printf("  /status <online|away|busy> [message] - Change status\n");
+    printf("  /join <room_id> - Join a chat room\n");
+    printf("  /create <room_name> - Create a new chat room\n");
+    printf("  /list - Show online users\n");
+    printf("  /rooms - List available rooms\n");
+    printf("  /help - Show this help message\n");
+    printf("  /exit - Exit the chat\n\n");
+    
+    printf("File Operations:\n");
+    printf("  /file <username> <filepath> - Send file to user\n");
+    printf("  /files - List received files\n");
+    printf("  /download <file_id> - Download received file\n\n");
+    
+    printf("Room Commands:\n");
+    printf("  /invite <username> - Invite user to current room\n");
+    printf("  /kick <username> - Kick user from current room (admin only)\n");
+    printf("  /topic <text> - Set room topic (admin only)\n\n");
+    
+    printf("Admin Commands:\n");
+    printf("  /admin status - Show server status\n");
+    printf("  /admin users - List all users\n");
+    printf("  /admin ban <username> - Ban user\n");
+    printf("  /admin unban <username> - Unban user\n");
+    printf("  /admin broadcast <message> - Broadcast message\n\n");
+    
+    printf("Press Enter to continue...");
+    getchar();
+    update_ui();
 }
 
 // Handle received file
 void handle_file_receive(char *message) {
     char sender[NAME_LENGTH];
     char filename[256];
-    char filepath[256];
+    char filesize[32];
+    char checksum[65];
     
     // Parse file notification
-    if (sscanf(message, "FILE:%[^:]:%[^:]:%s", sender, filename, filepath) != 3) {
-        printf("Invalid file notification format\n");
+    if (sscanf(message, "FILE:%[^:]:%[^:]:%[^:]:%s", 
+               sender, filename, filesize, checksum) != 4) {
+        ui_show_error("Invalid file notification format");
         return;
     }
     
-    printf("\nReceived file '%s' from %s\n", filename, sender);
-    printf("File saved as: %s\n", filepath);
+    long long size = atoll(filesize);
+    if (size > MAX_FILE_SIZE) {
+        ui_show_error("File too large (max size: 100MB)");
+        return;
+    }
+    
+    char filepath[512];
+    snprintf(filepath, sizeof(filepath), "downloads/%s", filename);
+    
+    ui_show_file_progress(sender, filename, size);
+    
+    // Receive file data
+    FILE *fp = fopen(filepath, "wb");
+    if (!fp) {
+        ui_show_error("Failed to create file");
+        return;
+    }
+    
+    char buffer[BUFFER_SIZE];
+    size_t total = 0;
+    ssize_t bytes;
+    
+    while (total < (size_t)size && (bytes = SSL_read(ssl, buffer, sizeof(buffer))) > 0) {
+        fwrite(buffer, 1, bytes, fp);
+        total += bytes;
+        ui_update_progress(total, size);
+    }
+    
+    fclose(fp);
+    
+    // Verify checksum
+    if (verify_file_checksum(filepath, checksum)) {
+        ui_show_success("File received successfully");
+    } else {
+        ui_show_error("File verification failed");
+        unlink(filepath);
+    }
 }
 
 // Send file to user
 void send_file(const char *recipient, const char *filepath) {
     struct stat st;
     if (stat(filepath, &st) != 0) {
-        printf("File not found: %s\n", filepath);
+        ui_show_error("File not found");
         return;
     }
     
     if (st.st_size > MAX_FILE_SIZE) {
-        printf("File too large (max size: 10MB)\n");
+        ui_show_error("File too large (max size: 100MB)");
         return;
     }
     
-    // Open file
-    FILE *fp = fopen(filepath, "rb");
-    if (!fp) {
-        printf("Failed to open file: %s\n", filepath);
+    // Calculate checksum
+    char checksum[65];
+    if (!calculate_file_checksum(filepath, checksum)) {
+        ui_show_error("Failed to calculate checksum");
         return;
     }
     
     // Get filename from path
     const char *filename = strrchr(filepath, '/');
-    if (filename) {
-        filename++; // Skip '/'
-    } else {
-        filename = filepath;
-    }
+    filename = filename ? filename + 1 : filepath;
     
     // Send file command
     char command[BUFFER_SIZE];
-    snprintf(command, BUFFER_SIZE, "/file %s %s", recipient, filename);
-    send(client_socket, command, strlen(command), 0);
+    snprintf(command, BUFFER_SIZE, "FILE:%s:%s:%lld:%s", 
+             recipient, filename, (long long)st.st_size, checksum);
+    SSL_write(ssl, command, strlen(command));
     
     // Send file content
+    FILE *fp = fopen(filepath, "rb");
+    if (!fp) {
+        ui_show_error("Failed to open file");
+        return;
+    }
+    
+    ui_show_file_progress("You", filename, st.st_size);
+    
     char buffer[BUFFER_SIZE];
     size_t bytes_read;
+    size_t total = 0;
+    
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
-        if (send(client_socket, buffer, bytes_read, 0) < 0) {
-            printf("Failed to send file\n");
+        if (SSL_write(ssl, buffer, bytes_read) < 0) {
+            ui_show_error("Failed to send file");
             break;
         }
+        total += bytes_read;
+        ui_update_progress(total, st.st_size);
     }
     
     fclose(fp);
-    printf("File sent successfully\n");
+    ui_show_success("File sent successfully");
 }
 
 // Connect to chat server
@@ -120,13 +220,13 @@ void connect_to_server(const char *server_ip, int server_port) {
     // Create socket
     client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket < 0) {
-        perror("Socket creation failed");
+        ui_show_error("Socket creation failed");
         exit(EXIT_FAILURE);
     }
     
     // Configure TCP socket
     if (configure_tcp_socket(client_socket) < 0) {
-        perror("Failed to configure socket");
+        ui_show_error("Failed to configure socket");
         cleanup();
         exit(EXIT_FAILURE);
     }
@@ -136,214 +236,181 @@ void connect_to_server(const char *server_ip, int server_port) {
     server_addr.sin_port = htons(server_port);
     
     if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
-        perror("Invalid address");
+        ui_show_error("Invalid address");
         cleanup();
         exit(EXIT_FAILURE);
     }
     
-    // Connect to server
-    printf("Connecting to server %s:%d...\n", server_ip, server_port);
+    ui_show_status("Connecting to server...");
+    
     if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Connection failed");
+        ui_show_error("Connection failed");
         cleanup();
         exit(EXIT_FAILURE);
     }
     
-    printf("Connected to server.\n");
+    // Set up SSL
+    ssl = SSL_new(ssl_ctx);
+    SSL_set_fd(ssl, client_socket);
+    
+    if (SSL_connect(ssl) != 1) {
+        ui_show_error("SSL connection failed");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    
+    // Verify certificate
+    X509 *cert = SSL_get_peer_certificate(ssl);
+    if (!cert) {
+        ui_show_error("No certificate presented by server");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    X509_free(cert);
+    
     connected = true;
+    ui_show_success("Connected to server");
 }
 
 // Authenticate with server
 void authenticate(const char *username) {
-    if (!connected) return;
-    
-    // Initialize authentication data
-    strncpy(auth.username, username, sizeof(auth.username) - 1);
-    
-    // Generate salt and token
-    if (generate_salt(auth.salt) < 0) {
-        printf("Failed to generate salt\n");
-        return;
-    }
-    
-    if (generate_token(auth.token) < 0) {
-        printf("Failed to generate token\n");
-        return;
-    }
-    
-    auth.token_expiry = time(NULL) + 3600; // Token expires in 1 hour
-    
     // Send username to server
-    if (send(client_socket, username, strlen(username), 0) < 0) {
-        perror("Failed to send username");
-        return;
+    SSL_write(ssl, username, strlen(username));
+    
+    // Wait for server response
+    char response[BUFFER_SIZE];
+    ssize_t bytes = SSL_read(ssl, response, sizeof(response) - 1);
+    if (bytes <= 0) {
+        ui_show_error("Authentication failed");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    
+    response[bytes] = '\0';
+    if (strcmp(response, "Invalid username format") == 0) {
+        ui_show_error(response);
+        cleanup();
+        exit(EXIT_FAILURE);
     }
     
     authenticated = true;
-    printf("Username sent to server.\n");
+    ui_show_success("Authentication successful");
 }
 
-// Thread function to receive messages
+// Cleanup resources
+void cleanup() {
+    if (ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        ssl = NULL;
+    }
+    
+    if (ssl_ctx) {
+        SSL_CTX_free(ssl_ctx);
+        ssl_ctx = NULL;
+    }
+    
+    if (client_socket > 0) {
+        close(client_socket);
+        client_socket = 0;
+    }
+    
+    EVP_cleanup();
+    ERR_free_strings();
+}
+
+// Signal handler
+void handle_signal(int sig) {
+    printf("\nReceived signal %d, exiting...\n", sig);
+    running = false;
+}
+
+// Message receiver thread
 void *receive_messages(void *arg) {
-    (void)arg; // Suppress unused parameter warning
+    (void)arg; // Unused parameter
     char buffer[BUFFER_SIZE];
-    int bytes_read;
+    ssize_t bytes;
     
-    printf("Message receiver started.\n");
-    
-    while (running && connected) {
-        memset(buffer, 0, BUFFER_SIZE);
-        
-        bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-        
-        if (bytes_read > 0) {
-            buffer[bytes_read] = '\0';
-            
-            // Check for special messages
-            if (strncmp(buffer, "FILE:", 5) == 0) {
-                handle_file_receive(buffer);
+    while (running) {
+        bytes = SSL_read(ssl, buffer, sizeof(buffer) - 1);
+        if (bytes <= 0) {
+            if (running) {
+                ui_show_error("Connection lost");
+                running = false;
             }
-            else if (strncmp(buffer, "ROOM:", 5) == 0) {
-                // Room related messages
-                printf("\n%s\n", buffer + 5);
-            }
-            else {
-                // Regular message
-                printf("%s\n", buffer);
-            }
-        }
-        else if (bytes_read == 0) {
-            printf("Disconnected from server.\n");
-            connected = false;
-            running = false;
             break;
         }
-        else {
-            if (running) {
-                perror("Receive failed");
-                connected = false;
-                running = false;
-                break;
-            }
-        }
         
-        usleep(100000); // 100ms delay
+        buffer[bytes] = '\0';
+        
+        // Handle different message types
+        if (strncmp(buffer, "FILE:", 5) == 0) {
+            handle_file_receive(buffer);
+        } else {
+            ui_update_chat_window(buffer);
+        }
     }
     
     return NULL;
 }
 
-// Handle signals (Ctrl+C)
-void handle_signal(int sig) {
-    printf("\nReceived signal %d, disconnecting...\n", sig);
-    running = false;
-}
-
-// Clean up resources
-void cleanup() {
-    if (client_socket >= 0) {
-        close(client_socket);
-        client_socket = -1;
-    }
-    connected = false;
-    authenticated = false;
+// Update UI
+void update_ui() {
+    ui_clear_screen();
+    ui_draw_borders();
+    ui_refresh();
 }
 
 // Main function
 int main(int argc, char *argv[]) {
-    // Default server settings
-    char server_ip[16] = "127.0.0.1";
-    int server_port = 8990;
-    
-    // Parse command line arguments
-    if (argc >= 2) {
-        strncpy(server_ip, argv[1], sizeof(server_ip) - 1);
+    if (argc != 3) {
+        printf("Usage: %s <server_ip> <port>\n", argv[0]);
+        return EXIT_FAILURE;
     }
     
-    if (argc >= 3) {
-        server_port = atoi(argv[2]);
-    }
+    // Initialize UI
+    ui_init();
     
-    // Setup signal handlers
+    // Set up signal handlers
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
     
+    // Initialize OpenSSL
+    init_openssl();
+    
     // Connect to server
-    connect_to_server(server_ip, server_port);
+    connect_to_server(argv[1], atoi(argv[2]));
     
     // Get username
-    printf("Enter your username: ");
-    fgets(username, NAME_LENGTH, stdin);
+    ui_get_username(username, sizeof(username));
     
-    // Remove newline
-    size_t len = strlen(username);
-    if (len > 0 && username[len - 1] == '\n') {
-        username[len - 1] = '\0';
-    }
-    
-    // Authenticate with server
+    // Authenticate
     authenticate(username);
     
-    // Start message receiving thread
+    // Start message receiver thread
     pthread_t recv_thread;
     if (pthread_create(&recv_thread, NULL, receive_messages, NULL) != 0) {
-        perror("Failed to create thread");
+        ui_show_error("Failed to create receiver thread");
         cleanup();
         return EXIT_FAILURE;
     }
     
-    // Show help message
-    show_help();
-    
-    // Main message loop
-    char message[BUFFER_SIZE];
-    printf("Start typing messages or commands:\n");
-    
+    // Main input loop
+    char input[BUFFER_SIZE];
     while (running) {
-        if (fgets(message, BUFFER_SIZE, stdin) == NULL) {
-            break;
-        }
-        
-        // Remove newline
-        len = strlen(message);
-        if (len > 0 && message[len - 1] == '\n') {
-            message[len - 1] = '\0';
-        }
-        
-        // Check for commands
-        if (message[0] == '/') {
-            if (strcmp(message, "/exit") == 0) {
-                running = false;
+        if (ui_get_input(input, sizeof(input))) {
+            if (strncmp(input, "/exit", 5) == 0) {
                 break;
             }
-            else if (strcmp(message, "/help") == 0) {
-                show_help();
-                continue;
-            }
-            else if (strncmp(message, "/file", 5) == 0) {
-                char recipient[NAME_LENGTH];
-                char filepath[256];
-                if (sscanf(message, "/file %s %s", recipient, filepath) == 2) {
-                    send_file(recipient, filepath);
-                } else {
-                    printf("Usage: /file <username> <filepath>\n");
-                }
-                continue;
-            }
-        }
-        
-        // Send message to server
-        if (connected && authenticated && send(client_socket, message, strlen(message), 0) < 0) {
-            perror("Send failed");
-            break;
+            SSL_write(ssl, input, strlen(input));
         }
     }
     
-    // Wait for receive thread to finish
+    // Cleanup
+    running = false;
     pthread_join(recv_thread, NULL);
-    
-    // Cleanup and exit
     cleanup();
-    printf("Disconnected from server.\n");
+    ui_cleanup();
+    
     return EXIT_SUCCESS;
 } 

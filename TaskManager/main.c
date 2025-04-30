@@ -11,10 +11,10 @@
 #include "process_manager.h"
 
 #define DEFAULT_PORT 8990
-#define MAX_MENU_ITEMS 15
 #define KEY_UP 65
 #define KEY_DOWN 66
-#define KEY_ENTER 10
+#define KEY_ENTER 13
+#define MENU_ITEMS 15
 
 // Function to handle terminal settings for interactive mode
 struct termios orig_termios;
@@ -34,8 +34,14 @@ void enable_raw_mode(void) {
 
 // Function to clear the screen
 void clear_screen(void) {
-    printf("\033[2J\033[H");  // ANSI escape sequence to clear screen and move cursor to home
-    //This is for making our terminal area much more user-friendly. That means after long time of using terminal it will be messy.
+    printf("\033[2J");  // Clear entire screen
+    printf("\033[H");   // Move cursor to home position
+    fflush(stdout);     // Force buffer flush
+}
+
+void wait_for_enter(void) {
+    printf("\nPress Enter to continue...");
+    while (getchar() != '\n');
 }
 
 void display_welcome_screen(void) {
@@ -79,13 +85,7 @@ void display_welcome_screen(void) {
     printf("\033[0m"); // Renkleri sıfırla
 }
 
-// Global variables for menu
-int current_selection = 0;
-
-void print_menu(void) {
-    clear_screen();
-    printf("\nProcess Manager Menu:\n\n");
-    
+void print_menu_with_selection(int selected) {
     const char *menu_items[] = {
         "List all processes",
         "Filter processes by name",
@@ -104,46 +104,57 @@ void print_menu(void) {
         "Connect to chat"
     };
     
-    for (int i = 0; i < MAX_MENU_ITEMS; i++) {
-        if (i == current_selection) {
-            printf("\033[1;32m-> %d. %s\033[0m\n", i + 1, menu_items[i]);
+    clear_screen();
+    
+    // Print header with padding
+    printf("\n╔════════════════════════════════════════╗\n");
+    printf("║          Process Manager Menu          ║\n");
+    printf("╚════════════════════════════════════════╝\n\n");
+    
+    for (int i = 0; i < MENU_ITEMS; i++) {
+        if (i == selected) {
+            printf("\033[7m> %2d. %-35s\033[0m\n", i + 1, menu_items[i]); // Highlighted with padding
         } else {
-            printf("   %d. %s\n", i + 1, menu_items[i]);
+            printf("  %2d. %-35s\n", i + 1, menu_items[i]); // Normal with padding
         }
     }
-    printf("\n   0. Exit\n");
-    printf("\nUse arrow keys to navigate, Enter to select\n");
+    printf("   0. %-35s\n", "Exit");
+    printf("\n═══════════════════════════════════════════\n");
+    printf("Use ↑↓ arrows to navigate, Enter to select\n");
+    fflush(stdout); // Ensure output is displayed
 }
 
 int get_menu_choice(void) {
+    int selected = 0;
+    char c;
     enable_raw_mode();
-    int c;
+    
     while (1) {
-        print_menu();
-        c = getchar();
+        print_menu_with_selection(selected);
         
-        if (c == 27) {  // ESC sequence
-            if (getchar() == '[') {
+        c = getchar();
+        if (c == 27) { // ESC sequence
+            if (getchar() == '[') { // Ensure it's an arrow key
                 c = getchar();
+                
                 switch (c) {
                     case KEY_UP:
-                        if (current_selection > 0) {
-                            current_selection--;
-                        }
+                        selected = (selected - 1 + MENU_ITEMS) % MENU_ITEMS;
                         break;
                     case KEY_DOWN:
-                        if (current_selection < MAX_MENU_ITEMS - 1) {
-                            current_selection++;
-                        }
+                        selected = (selected + 1) % MENU_ITEMS;
                         break;
                 }
             }
-        } else if (c == KEY_ENTER) {
+        } else if (c == KEY_ENTER || c == '\n') {
             disable_raw_mode();
-            return current_selection + 1;
-        } else if (c == '0') {
+            clear_screen();
+            return selected + 1;
+        } else if (c >= '0' && c <= '9') {
+            // Also allow numerical input
             disable_raw_mode();
-            return 0;
+            clear_screen();
+            return c - '0';
         }
     }
 }
@@ -220,6 +231,10 @@ void connect_to_chat(void) {
         snprintf(port_str, sizeof(port_str), "%d", DEFAULT_PORT);
     }
     
+    // Save current terminal settings
+    struct termios saved_termios;
+    tcgetattr(STDIN_FILENO, &saved_termios);
+    
     // Build command
     char command[256];
     snprintf(command, sizeof(command), 
@@ -234,23 +249,26 @@ void connect_to_chat(void) {
     }
     else if (pid == 0) {
         // Child process
+        // Reset terminal to canonical mode for chat client
+        struct termios term;
+        tcgetattr(STDIN_FILENO, &term);
+        term.c_lflag |= (ECHO | ICANON);
+        tcsetattr(STDIN_FILENO, TCSANOW, &term);
+        
         execl("/bin/sh", "sh", "-c", command, NULL);
         perror("Failed to start chat client");
         exit(EXIT_FAILURE);
     }
     else {
-        // Parent process
         printf("Chat client started (PID: %d)\n", pid);
-        printf("Connecting to chat server...\n");
+        printf("You can continue using the process manager in this window\n");
         
+        // Wait for child process to finish
         int status;
-        waitpid(pid, &status, 0); // Wait for child process to complete
+        waitpid(pid, &status, 0);
         
-        if (WIFEXITED(status)) {
-            printf("Chat session ended.\n");
-        } else {
-            printf("Chat client terminated unexpectedly.\n");
-        }
+        // Restore terminal settings
+        tcsetattr(STDIN_FILENO, TCSANOW, &saved_termios);
     }
 }
 
@@ -264,13 +282,11 @@ int main(void) {
     if (euid != 0) {
         printf("Warning: Some operations (like changing priorities of system processes) \n");
         printf("may require elevated privileges. Consider running with sudo if needed.\n\n");
-        printf("Press Enter to continue...");
-        getchar();
+        wait_for_enter();
     }
     
     display_welcome_screen();
-    printf("\nPress Enter to continue to main menu...");
-    getchar();
+    wait_for_enter();
     
     int choice;
     char input[256];
@@ -282,12 +298,13 @@ int main(void) {
     while (1) {
         choice = get_menu_choice();
         
-        if (choice == 0) {
-            printf("\nExiting...\n");
-            break;
-        }
+        // Reset terminal mode for regular input
+        struct termios term;
+        tcgetattr(STDIN_FILENO, &term);
+        term.c_lflag |= (ECHO | ICANON);
+        tcsetattr(STDIN_FILENO, TCSANOW, &term);
         
-        clear_screen();
+        clear_screen(); // Clear screen before executing command
         
         switch (choice) {
             case 1:
@@ -468,12 +485,20 @@ int main(void) {
             case 15:
                 connect_to_chat();
                 break;
+                
+            case 0:
+                printf("Exiting...\n");
+                stop_task_scheduler();
+                return EXIT_SUCCESS;
+                
+            default:
+                printf("Invalid choice\n");
         }
         
-        printf("\nPress Enter to continue...");
-        getchar();
+        if (choice != 0) { // Don't wait if exiting
+            wait_for_enter();
+        }
     }
     
-   stop_task_scheduler();
-    return 0;
+    return EXIT_SUCCESS;
 } 

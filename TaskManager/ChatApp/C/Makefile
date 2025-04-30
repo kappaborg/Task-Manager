@@ -1,31 +1,34 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -g -pthread -I/opt/homebrew/opt/openssl@3/include
-LDFLAGS = -pthread -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
+CFLAGS = -Wall -Wextra -I/opt/homebrew/opt/openssl@3/include
+LDFLAGS = -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto -pthread
 
-# Output directory
-BIN_DIR = bin
+SRCDIR = .
+BINDIR = bin
+OBJDIR = obj
 
-# Source files
-SERVER_SRC = chat_server.c
-CLIENT_SRC = chat_client.c
+SERVER_SRCS = chat_server.c security.c ui_components.c
+CLIENT_SRCS = chat_client.c security.c ui_components.c
+SERVER_OBJS = $(SERVER_SRCS:%.c=$(OBJDIR)/%.o)
+CLIENT_OBJS = $(CLIENT_SRCS:%.c=$(OBJDIR)/%.o)
 
-# Output files
-SERVER = $(BIN_DIR)/chat_server
-CLIENT = $(BIN_DIR)/chat_client
+SERVER = $(BINDIR)/chat_server
+CLIENT = $(BINDIR)/chat_client
 
-all: setup $(SERVER) $(CLIENT)
+.PHONY: all clean
 
-setup:
-	@mkdir -p $(BIN_DIR)
-	@mkdir -p uploads
+all: $(SERVER) $(CLIENT)
 
-$(SERVER): $(SERVER_SRC)
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+$(SERVER): $(SERVER_OBJS) | $(BINDIR)
+	$(CC) $(SERVER_OBJS) -o $@ $(LDFLAGS)
 
-$(CLIENT): $(CLIENT_SRC)
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+$(CLIENT): $(CLIENT_OBJS) | $(BINDIR)
+	$(CC) $(CLIENT_OBJS) -o $@ $(LDFLAGS)
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BINDIR) $(OBJDIR):
+	mkdir -p $@
 
 clean:
-	rm -rf $(BIN_DIR) uploads *.o
-
-.PHONY: all clean setup 
+	rm -rf $(BINDIR) $(OBJDIR) 

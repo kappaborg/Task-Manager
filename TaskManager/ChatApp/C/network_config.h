@@ -1,91 +1,95 @@
 #ifndef NETWORK_CONFIG_H
 #define NETWORK_CONFIG_H
 
-#include <netinet/tcp.h>
+#include <stdbool.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <fcntl.h>
 
-// TCP buffer sizes
-#define TCP_SEND_BUFFER_SIZE (256 * 1024)  // 256KB
-#define TCP_RECV_BUFFER_SIZE (256 * 1024)  // 256KB
+// Network configuration
+#define MAX_CLIENTS 50
+#define MAX_ROOMS 20
+#define MAX_USERS_PER_ROOM 20
+#define MAX_MESSAGE_SIZE 4096
+#define MAX_USERNAME_LENGTH 32
+#define MAX_ROOM_NAME_LENGTH 64
+#define KEEPALIVE_TIME 60
+#define KEEPALIVE_INTERVAL 15
+#define KEEPALIVE_PROBES 4
 
-// TCP keepalive settings
-#define TCP_KEEPALIVE_TIME 60     // Time in seconds before sending keepalive probes
-#define TCP_KEEPALIVE_INTVL 10    // Time in seconds between keepalive probes
-#define TCP_KEEPALIVE_PROBES 6    // Number of keepalive probes before connection is considered dead
+// Message types
+typedef enum {
+    MSG_CHAT = 1,
+    MSG_PRIVATE,
+    MSG_ROOM,
+    MSG_STATUS,
+    MSG_FILE,
+    MSG_ADMIN,
+    MSG_ERROR,
+    MSG_INFO
+} message_type_t;
 
-// Connection pool settings
-#define CONN_POOL_INITIAL_SIZE 10
-#define CONN_POOL_MAX_SIZE 1000
-#define CONN_POOL_GROW_SIZE 10
+// User status
+typedef enum {
+    STATUS_OFFLINE = 0,
+    STATUS_ONLINE,
+    STATUS_AWAY,
+    STATUS_BUSY
+} user_status_t;
 
-// Thread pool settings
-#define THREAD_POOL_MIN_SIZE 4
-#define THREAD_POOL_MAX_SIZE 32
-#define THREAD_POOL_QUEUE_SIZE 1000
+// Room type
+typedef enum {
+    ROOM_PUBLIC = 1,
+    ROOM_PRIVATE,
+    ROOM_MODERATED
+} room_type_t;
 
-// Rate limiting settings
-#define RATE_LIMIT_MESSAGES 30    // Maximum messages per minute
-#define RATE_LIMIT_CONNECTIONS 5  // Maximum connection attempts per minute
-
-// Socket timeout values (in seconds)
-#define SOCKET_CONNECT_TIMEOUT 30
-#define SOCKET_READ_TIMEOUT 300
-#define SOCKET_WRITE_TIMEOUT 60
-
-// Configure TCP socket with optimized settings
-static int configure_tcp_socket(int sockfd) {
-    int opt;
+// Configure TCP socket for optimal chat performance
+static inline int configure_tcp_socket(int sockfd) {
+    int flag = 1;
+    int keepalive_time = KEEPALIVE_TIME;
     
-    // Enable TCP keepalive
-    opt = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt)) < 0) {
+    // Disable Nagle's algorithm
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
+        return -1;
+    }
+    
+    // Enable keep-alive
+    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) < 0) {
         return -1;
     }
     
 #ifdef __APPLE__
-    // macOS specific keepalive settings
-    opt = TCP_KEEPALIVE_TIME;
-    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPALIVE, &opt, sizeof(opt)) < 0) {
+    // macOS specific keep-alive settings
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPALIVE, &keepalive_time, sizeof(int)) < 0) {
         return -1;
     }
 #else
-    // Linux specific keepalive settings
-    opt = TCP_KEEPALIVE_TIME;
-    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPIDLE, &opt, sizeof(opt)) < 0) {
+    // Linux specific keep-alive settings
+    int keepalive_interval = KEEPALIVE_INTERVAL;
+    int keepalive_probes = KEEPALIVE_PROBES;
+    
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPIDLE, &keepalive_time, sizeof(int)) < 0) {
         return -1;
     }
     
-    opt = TCP_KEEPALIVE_INTVL;
-    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPINTVL, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPINTVL, &keepalive_interval, sizeof(int)) < 0) {
         return -1;
     }
     
-    opt = TCP_KEEPALIVE_PROBES;
-    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPCNT, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPCNT, &keepalive_probes, sizeof(int)) < 0) {
         return -1;
     }
 #endif
     
-    // Set TCP buffer sizes
-    opt = TCP_SEND_BUFFER_SIZE;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &opt, sizeof(opt)) < 0) {
+    // Set non-blocking mode
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    if (flags < 0) {
         return -1;
     }
     
-    opt = TCP_RECV_BUFFER_SIZE;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(opt)) < 0) {
-        return -1;
-    }
-    
-    // Enable TCP_NODELAY (disable Nagle's algorithm)
-    opt = 1;
-    if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt)) < 0) {
-        return -1;
-    }
-    
-    // Enable address reuse
-    opt = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
         return -1;
     }
     
